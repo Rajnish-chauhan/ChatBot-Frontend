@@ -1,6 +1,6 @@
 import React, { useRef, useEffect } from "react";
 
-export default function ChatBox({ messages, loading }) {
+export default function chatBox({ messages, loading }) {
   const endRef = useRef(null);
 
   useEffect(() => {

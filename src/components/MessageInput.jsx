@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 
-export default function MessageInput({ onSend, disabled, externalFile, onClearExternalFile }) {
+export default function messageInput({ onSend, disabled, externalFile, onClearExternalFile }) {
   const [text, setText] = useState("");
   const [interimText, setInterimText] = useState(""); 
   const [localFile, setLocalFile] = useState(null);

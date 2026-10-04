@@ -1,90 +1,90 @@
 import { useState, useEffect } from "react";
-import { sendChatMessage } from "../api/ChatApi";
+import { fetchSessions, createSession, sendChatMessage } from "../api/chatApi";
 
-export function useChatSessions() {
-  const [sessions, setSessions] = useState(() => {
-    const saved = localStorage.getItem("chat_sessions");
-    if (saved) return JSON.parse(saved);
-    return [{ id: Date.now(), title: "New Chat", messages: [] }];
-  });
-
-  const [currentSessionId, setCurrentSessionId] = useState(() => {
-    const savedId = localStorage.getItem("current_session_id");
-    return savedId ? Number(savedId) : sessions[0]?.id;
-  });
-
+export function useChatSessions(isAuthenticated) {
+  const [sessions, setSessions] = useState([]);
+  const [currentSessionId, setCurrentSessionId] = useState(null);
   const [loading, setLoading] = useState(false);
   const [droppedFile, setDroppedFile] = useState(null);
 
   useEffect(() => {
-    localStorage.setItem("chat_sessions", JSON.stringify(sessions));
-    localStorage.setItem("current_session_id", currentSessionId);
-  }, [sessions, currentSessionId]);
-
-  const currentSession = sessions.find((s) => s.id === currentSessionId) || sessions[0];
-
-  const handleNewChat = () => {
-    if (sessions[0].messages.length === 0) {
-      setCurrentSessionId(sessions[0].id);
-      return;
+    if (isAuthenticated) {
+      loadSessionsFromDB();
     }
-    const newSession = { id: Date.now(), title: "New Chat", messages: [] };
-    setSessions((prev) => [newSession, ...prev]);
-    setCurrentSessionId(newSession.id);
+  }, [isAuthenticated]);
+
+  const loadSessionsFromDB = async () => {
+    try {
+      const data = await fetchSessions();
+      if (data && data.length > 0) {
+        setSessions(data);
+        setCurrentSessionId(data[data.length - 1].id);
+      } else {
+        handleNewChat(); 
+      }
+    } catch (err) {
+      console.error("Failed to load sessions:", err);
+    }
+  };
+
+  const currentSession = sessions.find((s) => s.id === currentSessionId) || { messages: [] };
+
+  const handleNewChat = async () => {
+    try {
+      const newSession = await createSession("New Chat");
+      setSessions((prev) => [...prev, newSession]);
+      setCurrentSessionId(newSession.id);
+      return newSession.id; // Return the new ID so handleSend can use it immediately
+    } catch (err) {
+      console.error("Failed to create session", err);
+      return null;
+    }
   };
 
   const handleSend = async (text, file) => {
+    let activeSessionId = currentSessionId;
+
+    // FIX: If there is no active session, automatically create one before sending
+    if (!activeSessionId) {
+      activeSessionId = await handleNewChat();
+      if (!activeSessionId) {
+        alert("Failed to create a session to send your message.");
+        return; 
+      }
+    }
+
     const activeFile = file || droppedFile;
-    const isDoc = activeFile && (activeFile.type.includes("pdf") || activeFile.name.endsWith(".doc") || activeFile.name.endsWith(".docx"));
-    
     const userMsg = { 
       sender: "user", 
       text, 
       image: activeFile ? URL.createObjectURL(activeFile) : null,
-      isDocument: isDoc,
+      isDocument: activeFile && (activeFile.type.includes("pdf") || activeFile.name.endsWith(".doc")),
       fileName: activeFile ? activeFile.name : null
     };
 
-    setSessions((prevSessions) =>
-      prevSessions.map((session) => {
-        if (session.id === currentSessionId) {
-          const newTitle = session.messages.length === 0 
-            ? text.substring(0, 30) + (text.length > 30 ? "..." : "")
-            : session.title;
-            
-          return {
-            ...session,
-            title: newTitle,
-            messages: [...session.messages, userMsg],
-          };
-        }
-        return session;
-      })
-    );
+    // Optimistically update UI using the activeSessionId
+    setSessions((prev) => prev.map((s) => 
+      s.id === activeSessionId 
+        ? { ...s, title: s.messages.length === 0 ? text.substring(0,25) : s.title, messages: [...s.messages, userMsg] } 
+        : s
+    ));
 
     setLoading(true);
     setDroppedFile(null);
 
     try {
-      const data = await sendChatMessage(text, activeFile);
-      const botMsg = { sender: "bot", text: data.reply || "No reply received." };
+      const data = await sendChatMessage(activeSessionId, text, activeFile);
+      // Ensure we safely pull the response string whether backend returns {text: "..."} or {reply: "..."}
+      const botMsg = { sender: "bot", text: data.reply || data.text || "No reply received." };
       
-      setSessions((prevSessions) =>
-        prevSessions.map((session) =>
-          session.id === currentSessionId
-            ? { ...session, messages: [...session.messages, botMsg] }
-            : session
-        )
-      );
+      setSessions((prev) => prev.map((s) =>
+        s.id === activeSessionId ? { ...s, messages: [...s.messages, botMsg] } : s
+      ));
     } catch (err) {
       const errorMsg = { sender: "bot", text: `Error: ${err.message}` };
-      setSessions((prevSessions) =>
-        prevSessions.map((session) =>
-          session.id === currentSessionId
-            ? { ...session, messages: [...session.messages, errorMsg] }
-            : session
-        )
-      );
+      setSessions((prev) => prev.map((s) =>
+        s.id === activeSessionId ? { ...s, messages: [...s.messages, errorMsg] } : s
+      ));
     } finally {
       setLoading(false);
     }

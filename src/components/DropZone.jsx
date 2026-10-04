@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 
-export default function DropZone({ children, onDrop }) {
+export default function dropZone({ children, onDrop }) {
   const [isDragging, setIsDragging] = useState(false);
 
   const handleDragOver = (e) => {

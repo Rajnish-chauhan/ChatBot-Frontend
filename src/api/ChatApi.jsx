@@ -1,45 +1,85 @@
 const BASE_URL = "http://localhost:8080/api";
 
 const getHeaders = (isFormData = false) => {
-  const token = localStorage.getItem("token") || sessionStorage.getItem("token");
+  const token = localStorage.getItem("token");
   const headers = {};
   if (token) headers["Authorization"] = `Bearer ${token}`;
   if (!isFormData) headers["Content-Type"] = "application/json";
   return headers;
 };
 
+const handleResponse = async (res) => {
+  if (res.status === 401 || res.status === 403) {
+    localStorage.clear();
+    window.location.reload();
+    throw new Error("Session expired. Please log in again.");
+  }
+  if (res.status === 429) {
+    throw new Error("Daily limit of 100 requests reached. Please try again tomorrow.");
+  }
+  if (!res.ok) {
+    const errorText = await res.text().catch(() => "Unknown Error");
+    throw new Error(errorText || `HTTP Error ${res.status}`);
+  }
+  return res;
+};
+
 // Auth APIs
+export const sendOtp = async (email) => {
+  const res = await fetch(`${BASE_URL}/auth/send-otp`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email })
+  });
+  await handleResponse(res);
+  return res.text();
+};
+
+export const registerWithOtp = async (email, otp, username, password) => {
+  const res = await fetch(`${BASE_URL}/auth/register-with-otp`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, otp, username, password })
+  });
+  await handleResponse(res);
+  return res.json();
+};
+
 export const loginUser = async (username, password) => {
   const res = await fetch(`${BASE_URL}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ username, password })
   });
-  if (!res.ok) throw new Error("Login failed");
+  await handleResponse(res);
   return res.json();
-};
-
-export const registerUser = async (username, password) => {
-  const res = await fetch(`${BASE_URL}/auth/register`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password })
-  });
-  
-  if (!res.ok) {
-    // Extract the exact error message from the backend (e.g., "Username taken")
-    const errorText = await res.text(); 
-    throw new Error(errorText || "Registration failed");
-  }
-  
-  return res.text();
 };
 
 export const guestLogin = async () => {
   const res = await fetch(`${BASE_URL}/auth/guest`, {
     method: "POST"
   });
-  if (!res.ok) throw new Error("Guest login failed");
+  await handleResponse(res);
+  return res.json();
+};
+
+export const setCredentials = async (username, password) => {
+  const res = await fetch(`${BASE_URL}/auth/set-credentials`, {
+    method: "POST",
+    headers: getHeaders(),
+    body: JSON.stringify({ username, password })
+  });
+  await handleResponse(res);
+  return res.json();
+};
+
+export const upgradeGuest = async (email, otp, username, password) => {
+  const res = await fetch(`${BASE_URL}/auth/upgrade-guest`, {
+    method: "POST",
+    headers: getHeaders(),
+    body: JSON.stringify({ email, otp, username, password })
+  });
+  await handleResponse(res);
   return res.json();
 };
 
@@ -48,7 +88,7 @@ export const fetchSessions = async () => {
   const res = await fetch(`${BASE_URL}/chat/sessions`, {
     headers: getHeaders()
   });
-  if (!res.ok) throw new Error("Failed to fetch sessions");
+  await handleResponse(res);
   return res.json();
 };
 
@@ -58,19 +98,24 @@ export const createSession = async (title) => {
     headers: getHeaders(),
     body: JSON.stringify({ title, messages: [] })
   });
-  if (!res.ok) throw new Error("Failed to create session");
-  return res.json();
+  await handleResponse(res);
+  const data = await res.json();
+  data.messages = data.messages || [];
+  return data;
 };
 
-export const sendChatMessage = async (sessionId, message, file) => {
-  const body = JSON.stringify({ text: message });
-  
-  const response = await fetch(`${BASE_URL}/chat/${sessionId}/message`, {
+export const sendChatMessage = async (sessionId, message) => {
+  const res = await fetch(`${BASE_URL}/chat/${sessionId}/message`, {
     method: "POST",
-    headers: getHeaders(false),
-    body: body,
+    headers: getHeaders(),
+    body: JSON.stringify({ text: message }),
   });
+  await handleResponse(res);
 
-  if (!response.ok) throw new Error(`Server returned HTTP ${response.status}`);
-  return response.json();
+  const remaining = res.headers.get("X-Rate-Limit-Remaining");
+  if (remaining !== null) {
+    localStorage.setItem("requestsRemaining", remaining);
+  }
+
+  return res.json();
 };

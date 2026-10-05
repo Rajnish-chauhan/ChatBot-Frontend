@@ -1,97 +1,137 @@
 import React, { useState } from "react";
 
-export default function sidebar({ onNewChat, sessions, currentSessionId, onSelectSession, onLogout }) {
-  const [isExpanded, setIsExpanded] = useState(true);
+export default function Sidebar({
+  sessions,
+  currentSessionId,
+  onNewChat,
+  onSelectSession,
+  onLogout,
+  username,
+  isGuest
+}) {
+  const [showMenu, setShowMenu] = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+
+  const handleLogoutClick = () => {
+    setShowMenu(false); // Close the popover menu
+    setShowLogoutModal(true); // Open the custom confirmation modal
+  };
+
+  const confirmLogout = () => {
+    setShowLogoutModal(false);
+    onLogout();
+  };
 
   return (
-    <div 
-      className={`h-full bg-[#f9f9f9] dark:bg-[#1e1f20] border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0 transition-all duration-300 ${
-        isExpanded ? "w-64" : "w-16"
-      }`}
-    >
-      {/* Top Header & Toggle Button */}
-      <div className="p-3 flex items-center justify-between">
-        {isExpanded ? (
-          <div className="flex items-center gap-2 px-2">
-            <span className="font-semibold text-slate-800 dark:text-slate-100 tracking-tight">ChatBot</span>
+    <>
+      {/* Professional Logout Confirmation Modal */}
+      {showLogoutModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
+          <div className="bg-white dark:bg-[#1e1e1e] p-6 rounded-2xl shadow-2xl w-full max-w-sm border border-slate-200 dark:border-slate-800">
+            <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2 text-center">
+              Confirm Logout
+            </h3>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mb-6 text-center">
+              Are you sure you want to log out of your account?
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowLogoutModal(false)}
+                className="flex-1 py-2.5 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-800 dark:text-slate-200 rounded-lg text-sm font-medium transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmLogout}
+                className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition-colors shadow-sm"
+              >
+                Log out
+              </button>
+            </div>
           </div>
-        ) : (
-          <div className="mx-auto w-6 h-6 flex items-center justify-center"></div>
-        )}
-        
-        <button
-          onClick={() => setIsExpanded(!isExpanded)}
-          className="p-2 rounded-lg hover:bg-slate-200 dark:hover:bg-[#2d2f31] text-slate-600 dark:text-slate-300 transition-colors"
-          title={isExpanded ? "Collapse sidebar" : "Expand sidebar"}
-        >
-          {/* Split Panel Icon */}
-          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="3" y="3" width="18" height="18" rx="4" ry="4"></rect>
-            <line x1="9" y1="6" x2="9" y2="18"></line>
-          </svg>
-        </button>
-      </div>
+        </div>
+      )}
 
-      {/* New Chat Button */}
-      <div className="p-3">
-        <button 
-          onClick={onNewChat}
-          className={`flex items-center gap-3 w-full rounded-full bg-slate-200/50 dark:bg-[#2d2f31] hover:bg-slate-300/50 dark:hover:bg-[#3b3d3f] transition-colors text-sm font-medium text-slate-800 dark:text-slate-200 ${
-            isExpanded ? "px-4 py-2.5" : "p-2.5 justify-center"
-          }`}
-          title="New chat"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-          </svg>
-          {isExpanded && <span>New chat</span>}
-        </button>
-      </div>
-
-      {/* Chat History Section */}
-      <div className="flex-1 overflow-y-auto px-2 space-y-1 pb-4">
-        {isExpanded && <p className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 mb-2 px-3 uppercase tracking-wider">Recent</p>}
+      <div className="w-64 bg-slate-50 dark:bg-[#1e1e1e] border-r border-slate-200 dark:border-slate-800 flex flex-col h-full transition-colors relative z-10">
         
-        {sessions.map((session) => (
-          <button 
-            key={session.id} 
-            onClick={() => onSelectSession(session.id)}
-            title={session.title}
-            className={`w-full text-left truncate rounded-lg text-sm transition-colors flex items-center ${
-              isExpanded ? "px-3 py-2.5" : "p-2.5 justify-center"
-            } ${
-              currentSessionId === session.id
-                ? "bg-slate-200 dark:bg-[#2d2f31] text-slate-900 dark:text-white font-medium" 
-                : "hover:bg-slate-200/50 dark:hover:bg-[#2d2f31]/50 text-slate-700 dark:text-slate-300"
-            }`}
+        {/* New Chat Button */}
+        <div className="p-4">
+          <button
+            onClick={onNewChat}
+            className="w-full flex items-center gap-2 px-4 py-2.5 bg-white dark:bg-[#2d2d2d] border border-slate-200 dark:border-slate-700 rounded-xl hover:bg-slate-100 dark:hover:bg-[#3d3d3d] text-slate-800 dark:text-slate-200 text-sm font-medium transition-all shadow-sm"
           >
-            {isExpanded ? (
-              <span className="truncate w-full">{session.title}</span>
-            ) : (
-              <span className="text-xs font-semibold">{session.title.charAt(0)}</span>
-            )}
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            New chat
           </button>
-        ))}
-      </div>
+        </div>
 
-      {/* Logout Button Section */}
-      <div className="p-3 border-t border-slate-200 dark:border-slate-800 shrink-0">
-        <button 
-          onClick={onLogout}
-          className={`flex items-center gap-3 w-full rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 transition-colors text-sm font-medium ${
-            isExpanded ? "px-3 py-2" : "p-2 justify-center"
-          }`}
-          title="Logout"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-            <polyline points="16 17 21 12 16 7"></polyline>
-            <line x1="21" y1="12" x2="9" y2="12"></line>
-          </svg>
-          {isExpanded && <span>Logout</span>}
-        </button>
+        {/* Chat Sessions List */}
+        <div className="flex-1 overflow-y-auto px-3 space-y-1">
+          <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 px-3 py-2 uppercase tracking-wider">
+            Recent
+          </div>
+          {sessions.map((session) => (
+            <button
+              key={session.id}
+              onClick={() => onSelectSession(session.id)}
+              className={`w-full text-left px-3 py-2 rounded-lg text-sm truncate transition-colors ${
+                currentSessionId === session.id
+                  ? "bg-slate-200 dark:bg-[#2d2d2d] text-slate-900 dark:text-white font-medium"
+                  : "text-slate-600 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-[#252525]"
+              }`}
+            >
+              {session.messages?.[0]?.text || "New Chat"}
+            </button>
+          ))}
+        </div>
+
+        {/* Bottom Profile Section */}
+        <div className="p-3 border-t border-slate-200 dark:border-slate-800 relative mt-auto">
+          
+          {/* Popover Logout Menu */}
+          {showMenu && (
+            <div className="absolute bottom-full left-0 w-full pb-2 px-3 z-20">
+              <div className="bg-white dark:bg-[#2d2d2d] border border-slate-200 dark:border-slate-700 rounded-xl shadow-lg p-1">
+                <button
+                  onClick={handleLogoutClick}
+                  className="w-full flex items-center justify-between px-3 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-colors font-medium"
+                >
+                  Log out
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Profile Button */}
+          <button
+            onClick={() => setShowMenu(!showMenu)}
+            className="w-full flex items-center justify-end gap-3 p-2 rounded-xl hover:bg-slate-200 dark:hover:bg-[#2d2d2d] transition-colors"
+          >
+            <div className="flex flex-col items-end truncate">
+              <span className="text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">
+                {isGuest ? "Guest User" : (username || "User")}
+              </span>
+              <span className={`text-[10px] font-bold uppercase tracking-wider ${
+                isGuest ? "text-amber-500" : "text-emerald-500"
+              }`}>
+                {isGuest ? "Temporary" : "Verified"}
+              </span>
+            </div>
+            
+            <div className="w-10 h-10 shrink-0 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-md border-2 border-slate-50 dark:border-[#1e1e1e] select-none">
+              <span className="text-white font-bold text-sm">
+                {username ? username.charAt(0).toUpperCase() : "U"}
+              </span>
+            </div>
+          </button>
+        </div>
+
       </div>
-    </div>
+    </>
   );
 }

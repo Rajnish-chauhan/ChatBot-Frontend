@@ -10,13 +10,27 @@ const getHeaders = (isFormData = false) => {
 
 const handleResponse = async (res) => {
   if (res.status === 401 || res.status === 403) {
-    localStorage.clear();
-    window.location.reload();
-    throw new Error("Session expired. Please log in again.");
+    const isGuest = localStorage.getItem("isGuest") === "true";
+    if (isGuest) {
+      throw new Error("AUTH_REQUIRED: Please log in or create an account.");
+    } else {
+      localStorage.clear();
+      window.location.reload();
+      throw new Error("AUTH_REQUIRED: Your session has expired.");
+    }
   }
+  
   if (res.status === 429) {
-    throw new Error("Daily limit of 100 requests reached. Please try again tomorrow.");
+    const isGuest = localStorage.getItem("isGuest") === "true";
+    if (isGuest) {
+      // Guest hit their 10-call limit
+      throw new Error("GUEST_LIMIT_REACHED: Please log in to continue.");
+    } else {
+      // Registered user hit their 100-call limit
+      throw new Error("LIMIT_REACHED: 429 Too Many Requests");
+    }
   }
+  
   if (!res.ok) {
     const errorText = await res.text().catch(() => "Unknown Error");
     throw new Error(errorText || `HTTP Error ${res.status}`);
@@ -24,7 +38,9 @@ const handleResponse = async (res) => {
   return res;
 };
 
+// ==========================================
 // Auth APIs
+// ==========================================
 export const sendOtp = async (email) => {
   const res = await fetch(`${BASE_URL}/auth/send-otp`, {
     method: "POST",
@@ -83,7 +99,9 @@ export const upgradeGuest = async (email, otp, username, password) => {
   return res.json();
 };
 
+// ==========================================
 // Chat APIs
+// ==========================================
 export const fetchSessions = async () => {
   const res = await fetch(`${BASE_URL}/chat/sessions`, {
     headers: getHeaders()
@@ -111,11 +129,50 @@ export const sendChatMessage = async (sessionId, message) => {
     body: JSON.stringify({ text: message }),
   });
   await handleResponse(res);
-
-  const remaining = res.headers.get("X-Rate-Limit-Remaining");
-  if (remaining !== null) {
-    localStorage.setItem("requestsRemaining", remaining);
-  }
-
   return res.json();
+};
+
+// Real-time Streaming Chat API with SSE Parsing
+export const streamChatMessage = async (sessionId, message, onChunk) => {
+  const res = await fetch(`${BASE_URL}/chat/${sessionId}/stream`, {
+    method: "POST",
+    headers: getHeaders(),
+    body: JSON.stringify({ text: message }),
+  });
+
+  await handleResponse(res);
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder("utf-8");
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    
+    const chunk = decoder.decode(value, { stream: true });
+    
+    const lines = chunk.split('\n');
+    for (const line of lines) {
+      if (line.startsWith('data:')) {
+        const cleanText = line.substring(5);
+        onChunk(cleanText); 
+      }
+    }
+  }
+};
+
+// ==========================================
+// User Profile APIs
+// ==========================================
+export const deleteAccount = async () => {
+  const res = await fetch(`${BASE_URL}/users/me`, {
+    method: "DELETE",
+    headers: getHeaders()
+  });
+  
+  if (!res.ok) {
+    const errorText = await res.text().catch(() => "Unknown Error");
+    throw new Error(errorText || `HTTP Error ${res.status}`);
+  }
+  return true;
 };

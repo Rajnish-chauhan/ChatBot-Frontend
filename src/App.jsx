@@ -7,6 +7,8 @@ import Sidebar from "./components/Sidebar";
 import Login from "./components/Login";
 import OAuthPasswordSetupModal from "./components/OAuthPasswordSetupModal";
 import GuestUpgradeModal from "./components/GuestUpgradeModal";
+import DeleteConfirmModal from "./components/DeleteConfirmModal";
+import { deleteAccount } from "./api/ChatApi";
 import { useChatSessions } from "./hooks/UseChatSessions";
 
 export default function App() {
@@ -16,6 +18,7 @@ export default function App() {
   
   const [requiresPasswordSetup, setRequiresPasswordSetup] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -61,6 +64,18 @@ export default function App() {
     setUsername("");
     setIsGuest(false);
     setRequiresPasswordSetup(false);
+    setShowDeleteModal(false);
+    setShowUpgradeModal(false);
+  };
+
+  const confirmDeleteAccount = async () => {
+    try {
+      await deleteAccount();
+      handleLogout();
+    } catch (error) {
+      alert("Failed to delete account: " + error.message);
+      setShowDeleteModal(false);
+    }
   };
 
   const onOAuthSetupSuccess = (token, newUsername) => {
@@ -80,6 +95,14 @@ export default function App() {
     setShowUpgradeModal(false);
   };
 
+  const handleAuthRequired = () => {
+    if (isGuest) {
+      setShowUpgradeModal(true);
+    } else {
+      handleLogout();
+    }
+  };
+
   const {
     sessions,
     currentSession,
@@ -90,7 +113,7 @@ export default function App() {
     setDroppedFile,
     handleNewChat,
     handleSend
-  } = useChatSessions(isAuthenticated);
+  } = useChatSessions(isAuthenticated, handleAuthRequired);
 
   if (!isAuthenticated) {
     return <Login onLoginSuccess={handleLoginSuccess} />;
@@ -110,6 +133,12 @@ export default function App() {
         onSuccess={onGuestUpgradeSuccess} 
       />
 
+      <DeleteConfirmModal
+        isOpen={showDeleteModal}
+        onClose={() => setShowDeleteModal(false)}
+        onConfirm={confirmDeleteAccount}
+      />
+
       <DropZone onDrop={(file) => setDroppedFile(file)}>
         <div className="h-full w-full flex bg-white dark:bg-[#121212] transition-colors overflow-hidden">
           
@@ -119,6 +148,7 @@ export default function App() {
             onNewChat={handleNewChat} 
             onSelectSession={setCurrentSessionId}
             onLogout={handleLogout}
+            onDeleteAccount={() => setShowDeleteModal(true)}
             username={username}
             isGuest={isGuest}
           />
@@ -126,21 +156,17 @@ export default function App() {
           <div className="flex-1 flex flex-col relative overflow-hidden">
             <header className="h-16 shrink-0 px-6 flex items-center justify-between z-10 border-b border-slate-200/50 dark:border-slate-800/50">
               <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-[#2d2d2d] px-3 py-1 rounded-full border border-slate-200 dark:border-slate-700">
-                  {localStorage.getItem("requestsRemaining") ?? 100} / 100 calls left today
-                </span>
-
                 {isGuest && (
                   <button
                     onClick={() => setShowUpgradeModal(true)}
-                    className="text-xs bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-full font-medium transition shadow-sm"
+                    className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded-full font-medium transition shadow-sm"
                   >
-                    Save My Account
+                    Login to Save Chat
                   </button>
                 )}
               </div>
 
-              <div className="flex items-center gap-6">
+              <div className="flex items-center gap-4">
                 <ThemeToggle />
               </div>
             </header>

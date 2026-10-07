@@ -8,6 +8,7 @@ import Login from "./components/Login";
 import OAuthPasswordSetupModal from "./components/OAuthPasswordSetupModal";
 import GuestUpgradeModal from "./components/GuestUpgradeModal";
 import DeleteConfirmModal from "./components/DeleteConfirmModal";
+import ProfileModal from "./components/ProfileModal";
 import { deleteAccount } from "./api/ChatApi";
 import { useChatSessions } from "./hooks/UseChatSessions";
 
@@ -19,6 +20,7 @@ export default function App() {
   const [requiresPasswordSetup, setRequiresPasswordSetup] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -66,6 +68,7 @@ export default function App() {
     setRequiresPasswordSetup(false);
     setShowDeleteModal(false);
     setShowUpgradeModal(false);
+    setShowProfileModal(false);
   };
 
   const confirmDeleteAccount = async () => {
@@ -134,9 +137,29 @@ export default function App() {
       />
 
       <DeleteConfirmModal
-        isOpen={showDeleteModal}
+        isOpen={showDeleteModal} 
         onClose={() => setShowDeleteModal(false)}
         onConfirm={confirmDeleteAccount}
+      />
+
+      <ProfileModal
+        isOpen={showProfileModal}
+        onClose={() => setShowProfileModal(false)}
+        username={username}
+        isGuest={isGuest}
+        sessions={sessions}
+        onSelectSession={(id) => {
+          setCurrentSessionId(id);
+          setShowProfileModal(false);
+        }}
+        onDeleteAccount={() => {
+          setShowProfileModal(false);
+          setShowDeleteModal(true);
+        }}
+        onOpenUpgrade={() => {
+          setShowProfileModal(false);
+          setShowUpgradeModal(true);
+        }}
       />
 
       <DropZone onDrop={(file) => setDroppedFile(file)}>
@@ -149,7 +172,8 @@ export default function App() {
             onSelectSession={setCurrentSessionId}
             onLogout={handleLogout}
             onDeleteAccount={() => setShowDeleteModal(true)}
-            username={username}
+            onOpenProfile={() => setShowProfileModal(true)}
+            username={username} 
             isGuest={isGuest}
           />
 

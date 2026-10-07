@@ -1,12 +1,10 @@
-import React, { useState } from "react";
-import { loginUser, guestLogin, sendOtp, registerWithOtp } from "../api/ChatApi";
+import React, { useState, useEffect } from "react";
+import { loginUser, guestLogin, sendOtp, registerWithOtp, checkEmailExists } from "../api/ChatApi";
 
 export default function Login({ onLoginSuccess }) {
-  // Mode toggles
   const [isRegistering, setIsRegistering] = useState(false);
   const [otpSent, setOtpSent] = useState(false);
 
-  // Form states
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [email, setEmail] = useState("");
@@ -15,10 +13,27 @@ export default function Login({ onLoginSuccess }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
+  
+  const [liveEmailError, setLiveEmailError] = useState(""); 
 
-  // ==========================================
-  // Login Flow
-  // ==========================================
+  useEffect(() => {
+    if (!isRegistering || !email || !email.includes('@')) {
+      setLiveEmailError("");
+      return;
+    }
+    
+    const timeoutId = setTimeout(async () => {
+      const exists = await checkEmailExists(email);
+      if (exists) {
+        setLiveEmailError("Email is already registered. Please sign in instead.");
+      } else {
+        setLiveEmailError("");
+      }
+    }, 500);
+
+    return () => clearTimeout(timeoutId);
+  }, [email, isRegistering]);
+
   const handleStandardLogin = async (e) => {
     e.preventDefault();
     if (!username.trim() || !password.trim()) return;
@@ -35,15 +50,11 @@ export default function Login({ onLoginSuccess }) {
     }
   };
 
-  // ==========================================
-  // Guest Flow (10 Call Limit)
-  // ==========================================
   const handleContinueWithoutLogin = async () => {
     setLoading(true);
     setError("");
     try {
       const data = await guestLogin();
-      // Marks user as guest (true) which triggers the 10-call limit UI and backend bucket
       onLoginSuccess(data.token, "Guest", true, false);
     } catch (err) {
       setError(err.message || "Failed to initialize session.");
@@ -52,12 +63,9 @@ export default function Login({ onLoginSuccess }) {
     }
   };
 
-  // ==========================================
-  // OTP Registration Flow
-  // ==========================================
   const handleSendOtp = async (e) => {
     e.preventDefault();
-    if (!email.trim()) return;
+    if (!email.trim() || liveEmailError) return;
     
     setLoading(true);
     setError("");
@@ -89,12 +97,9 @@ export default function Login({ onLoginSuccess }) {
     }
   };
 
-  // ==========================================
-  // Render
-  // ==========================================
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-[#121212] p-4 transition-colors">
-      <div className="w-full max-w-md bg-white dark:bg-[#1e1e1e] rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 p-8">
+      <div className="w-full max-w-md bg-white dark:bg-[#1c1c1c] rounded-[20px] shadow-xl border border-slate-200 dark:border-[#2d2d2d] p-8">
         
         <div className="text-center mb-8">
           <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">
@@ -108,23 +113,22 @@ export default function Login({ onLoginSuccess }) {
         </div>
 
         {error && (
-          <div className="mb-6 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 p-3 rounded-lg text-sm text-center border border-red-100 dark:border-red-800/30">
+          <div className="mb-6 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 p-3 rounded-lg text-sm text-center border border-red-100 dark:border-red-500/20">
             {error}
           </div>
         )}
         
         {successMsg && (
-          <div className="mb-6 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 p-3 rounded-lg text-sm text-center border border-emerald-100 dark:border-emerald-800/30">
+          <div className="mb-6 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 p-3 rounded-lg text-sm text-center border border-emerald-100 dark:border-emerald-500/20">
             {successMsg}
           </div>
         )}
 
-        {/* ================= LOGIN FORM ================= */}
         {!isRegistering && (
           <>
             <form onSubmit={handleStandardLogin} className="space-y-5">
               <div>
-                <label className="block text-xs font-semibold tracking-wide text-slate-500 dark:text-slate-400 uppercase mb-2">
+                <label className="block text-xs font-bold tracking-widest text-slate-500 dark:text-slate-400 uppercase mb-2">
                   Username or Email
                 </label>
                 <input
@@ -132,14 +136,14 @@ export default function Login({ onLoginSuccess }) {
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   disabled={loading}
-                  className="w-full px-4 py-2.5 bg-white dark:bg-[#121212] border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white transition-colors text-sm"
+                  className="w-full px-4 py-3 bg-slate-50 dark:bg-[#2a2a2a] border border-slate-300 dark:border-[#3a3a3a] rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white transition-colors text-sm"
                   placeholder="Username or Email"
                   required
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold tracking-wide text-slate-500 dark:text-slate-400 uppercase mb-2">
+                <label className="block text-xs font-bold tracking-widest text-slate-500 dark:text-slate-400 uppercase mb-2">
                   Password
                 </label>
                 <input
@@ -147,7 +151,7 @@ export default function Login({ onLoginSuccess }) {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   disabled={loading}
-                  className="w-full px-4 py-2.5 bg-white dark:bg-[#121212] border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white transition-colors tracking-widest text-sm"
+                  className="w-full px-4 py-3 bg-slate-50 dark:bg-[#2a2a2a] border border-slate-300 dark:border-[#3a3a3a] rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white transition-colors tracking-widest text-sm"
                   placeholder="••••••••"
                   required
                 />
@@ -156,38 +160,37 @@ export default function Login({ onLoginSuccess }) {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-[#1d4ed8] hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg transition-colors shadow-sm disabled:opacity-50 mt-4"
+                className="w-full bg-[#1d4ed8] hover:bg-blue-700 text-white font-medium py-3 rounded-xl transition-colors shadow-sm disabled:opacity-50 mt-4"
               >
                 {loading ? "Signing In..." : "Sign In"}
               </button>
             </form>
 
-            <div className="flex justify-between items-center mt-5">
+            <div className="flex justify-between items-center mt-6 pt-6 border-t border-slate-200 dark:border-[#2d2d2d]">
               <button 
                 type="button" 
                 onClick={() => { setError(""); setIsRegistering(true); }}
-                className="text-sm text-[#1d4ed8] hover:underline font-medium"
+                className="text-sm text-blue-600 dark:text-blue-400 hover:underline font-medium"
               >
-                Need an account? Register with OTP
+                Register with OTP
               </button>
               
               <button 
                 type="button" 
                 onClick={handleContinueWithoutLogin}
                 disabled={loading}
-                className="text-sm text-slate-800 dark:text-slate-200 hover:underline font-semibold"
+                className="text-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white font-semibold transition"
               >
-                Continue without login
+                Continue as Guest
               </button>
             </div>
           </>
         )}
 
-        {/* ================= REGISTRATION FORM ================= */}
         {isRegistering && (
           <form onSubmit={otpSent ? handleCompleteRegistration : handleSendOtp} className="space-y-5">
             <div>
-              <label className="block text-xs font-semibold tracking-wide text-slate-500 dark:text-slate-400 uppercase mb-2">
+              <label className="block text-xs font-bold tracking-widest text-slate-500 dark:text-slate-400 uppercase mb-2">
                 Email Address
               </label>
               <input
@@ -195,16 +198,21 @@ export default function Login({ onLoginSuccess }) {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 disabled={loading || otpSent}
-                className="w-full px-4 py-2.5 bg-white dark:bg-[#121212] border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white transition-colors text-sm disabled:opacity-60"
+                className={`w-full px-4 py-3 bg-slate-50 dark:bg-[#2a2a2a] border rounded-xl focus:outline-none focus:ring-2 transition-colors text-sm text-slate-900 dark:text-white disabled:opacity-60 ${
+                  liveEmailError ? "border-red-500/50 focus:ring-red-500/50" : "border-slate-300 dark:border-[#3a3a3a] focus:ring-blue-500"
+                }`}
                 placeholder="you@example.com"
                 required
               />
+              {liveEmailError && (
+                <p className="text-red-500 dark:text-red-400 text-xs mt-2 font-medium">{liveEmailError}</p>
+              )}
             </div>
 
             {otpSent && (
               <>
                 <div>
-                  <label className="block text-xs font-semibold tracking-wide text-slate-500 dark:text-slate-400 uppercase mb-2">
+                  <label className="block text-xs font-bold tracking-widest text-slate-500 dark:text-slate-400 uppercase mb-2">
                     Enter OTP
                   </label>
                   <input
@@ -212,13 +220,13 @@ export default function Login({ onLoginSuccess }) {
                     value={otp}
                     onChange={(e) => setOtp(e.target.value)}
                     disabled={loading}
-                    className="w-full px-4 py-2.5 bg-white dark:bg-[#121212] border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white transition-colors text-sm tracking-widest"
+                    className="w-full px-4 py-3 bg-slate-50 dark:bg-[#2a2a2a] border border-slate-300 dark:border-[#3a3a3a] rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white transition-colors text-sm tracking-widest"
                     placeholder="123456"
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold tracking-wide text-slate-500 dark:text-slate-400 uppercase mb-2">
+                  <label className="block text-xs font-bold tracking-widest text-slate-500 dark:text-slate-400 uppercase mb-2">
                     Choose Username
                   </label>
                   <input
@@ -226,13 +234,13 @@ export default function Login({ onLoginSuccess }) {
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
                     disabled={loading}
-                    className="w-full px-4 py-2.5 bg-white dark:bg-[#121212] border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white transition-colors text-sm"
+                    className="w-full px-4 py-3 bg-slate-50 dark:bg-[#2a2a2a] border border-slate-300 dark:border-[#3a3a3a] rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white transition-colors text-sm"
                     placeholder="Username"
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold tracking-wide text-slate-500 dark:text-slate-400 uppercase mb-2">
+                  <label className="block text-xs font-bold tracking-widest text-slate-500 dark:text-slate-400 uppercase mb-2">
                     Create Password
                   </label>
                   <input
@@ -240,7 +248,7 @@ export default function Login({ onLoginSuccess }) {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     disabled={loading}
-                    className="w-full px-4 py-2.5 bg-white dark:bg-[#121212] border border-slate-300 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white transition-colors text-sm tracking-widest"
+                    className="w-full px-4 py-3 bg-slate-50 dark:bg-[#2a2a2a] border border-slate-300 dark:border-[#3a3a3a] rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-900 dark:text-white transition-colors text-sm tracking-widest"
                     placeholder="••••••••"
                     required
                   />
@@ -250,8 +258,8 @@ export default function Login({ onLoginSuccess }) {
 
             <button
               type="submit"
-              disabled={loading}
-              className="w-full bg-[#1d4ed8] hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg transition-colors shadow-sm disabled:opacity-50 mt-4"
+              disabled={loading || !!liveEmailError}
+              className="w-full bg-[#1d4ed8] hover:bg-blue-700 text-white font-medium py-3 rounded-xl transition-colors shadow-sm disabled:opacity-50 mt-4"
             >
               {loading 
                 ? "Processing..." 
@@ -262,7 +270,7 @@ export default function Login({ onLoginSuccess }) {
               <button 
                 type="button" 
                 onClick={() => { setError(""); setSuccessMsg(""); setIsRegistering(false); }}
-                className="text-sm text-slate-800 dark:text-slate-200 hover:underline font-medium"
+                className="text-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white font-semibold transition"
               >
                 Already have an account? Sign In
               </button>
@@ -270,12 +278,11 @@ export default function Login({ onLoginSuccess }) {
           </form>
         )}
 
-        {/* ================= GOOGLE OAUTH ================= */}
-        <div className="mt-8 pt-6 border-t border-slate-200 dark:border-slate-800">
+        <div className="mt-8 pt-6 border-t border-slate-200 dark:border-[#2d2d2d]">
           <button
             type="button"
             onClick={() => window.location.href = "http://localhost:8080/oauth2/authorization/google"}
-            className="w-full flex items-center justify-center gap-3 bg-white dark:bg-[#121212] border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-[#1a1a1a] font-medium py-2.5 rounded-lg transition-colors"
+            className="w-full flex items-center justify-center gap-3 bg-white dark:bg-[#2a2a2a] border border-slate-300 dark:border-[#3a3a3a] text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-[#333] font-medium py-3 rounded-xl transition-colors"
           >
             <svg viewBox="0 0 24 24" className="w-5 h-5">
               <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>

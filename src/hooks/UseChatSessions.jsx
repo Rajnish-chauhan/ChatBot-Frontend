@@ -1,30 +1,67 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { fetchSessions, createSession, streamChatMessage } from "../api/ChatApi";
 
 export function useChatSessions(isAuthenticated, onRequireLogin) {
   const [sessions, setSessions] = useState([]);
-  const [currentSessionId, setCurrentSessionId] = useState(null);
+  const [currentSessionId, setCurrentSessionId] = useState(() => {
+    const saved = localStorage.getItem("currentSessionId");
+    return saved ? Number(saved) : null;
+  });
   const [loading, setLoading] = useState(false);
   const [droppedFile, setDroppedFile] = useState(null);
 
+  const hasFetchedRef = useRef(false);
+  const isCreatingRef = useRef(false);
+
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && !hasFetchedRef.current) {
+      hasFetchedRef.current = true;
       loadSessionsFromDB();
     }
   }, [isAuthenticated]);
 
+  // Persist selected session ID in localStorage
+  useEffect(() => {
+    if (currentSessionId) {
+      localStorage.setItem("currentSessionId", String(currentSessionId));
+    }
+  }, [currentSessionId]);
+
   const loadSessionsFromDB = async () => {
     try {
       const data = await fetchSessions();
+      
       if (Array.isArray(data) && data.length > 0) {
-        const safeData = data.map(s => ({ ...s, messages: s.messages || [] }));
+        // Normalize sender casing so ChatBox renders user/bot bubbles correctly
+        const safeData = data.map(s => ({ 
+          ...s, 
+          messages: (s.messages || []).map(m => ({
+            ...m,
+            sender: m.sender ? m.sender.toLowerCase() : "bot"
+          })) 
+        }));
+        
+        safeData.sort((a, b) => a.id - b.id);
         setSessions(safeData);
-        setCurrentSessionId(safeData[safeData.length - 1].id);
+
+        // Restore saved session ID or pick the most recent
+        const savedId = Number(localStorage.getItem("currentSessionId"));
+        const exists = safeData.some(s => s.id === savedId);
+
+        if (exists) {
+          setCurrentSessionId(savedId);
+        } else {
+          // Select the last active session
+          const lastActive = [...safeData].reverse().find(s => s.messages.length > 0);
+          const chosen = lastActive ? lastActive.id : safeData[safeData.length - 1].id;
+          setCurrentSessionId(chosen);
+        }
       } else {
         await handleNewChat(); 
       }
     } catch (err) {
       console.error("Failed to load sessions:", err);
+      hasFetchedRef.current = false; 
     }
   };
 
@@ -38,28 +75,36 @@ export function useChatSessions(isAuthenticated, onRequireLogin) {
       return existingEmptySession.id;
     }
 
+    if (isCreatingRef.current) return null;
+    isCreatingRef.current = true;
+
     try {
       const newSession = await createSession("New Chat");
-      setSessions((prev) => [...prev, newSession]);
-      setCurrentSessionId(newSession.id);
-      return newSession.id;
+      newSession.messages = [];
+      let finalId = newSession.id;
+
+      setSessions((prev) => {
+        const stillHasEmpty = prev.find(s => !s.messages || s.messages.length === 0);
+        if (stillHasEmpty) {
+          finalId = stillHasEmpty.id;
+          return prev;
+        }
+        return [...prev, newSession];
+      });
+
+      setCurrentSessionId(finalId);
+      return finalId;
+
     } catch (err) {
       console.error("Failed to create session", err);
-      
-      const errorMessage = err.message || "";
-      if (
-        errorMessage.includes("GUEST_LIMIT_REACHED") || 
-        errorMessage.includes("AUTH_REQUIRED") || 
-        errorMessage.includes("403")
-      ) {
+      if (err.message?.includes("GUEST_LIMIT") || err.message?.includes("AUTH_REQUIRED")) {
         if (onRequireLogin) onRequireLogin();
-      } else if (errorMessage.includes("LIMIT_REACHED") || errorMessage.includes("429")) {
-        const resetTime = new Date();
-        resetTime.setHours(resetTime.getHours() + 24);
-        const timeStr = resetTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        alert(`You have reached your daily interaction limit. Please try again tomorrow after ${timeStr}.`);
+      } else {
+        alert("Session creation failed: " + err.message);
       }
       return null;
+    } finally {
+      isCreatingRef.current = false;
     }
   };
 
@@ -68,9 +113,7 @@ export function useChatSessions(isAuthenticated, onRequireLogin) {
 
     if (!activeSessionId) {
       activeSessionId = await handleNewChat();
-      if (!activeSessionId) {
-        return; 
-      }
+      if (!activeSessionId) return; 
     }
 
     const activeFile = file || droppedFile;
@@ -89,7 +132,7 @@ export function useChatSessions(isAuthenticated, onRequireLogin) {
         const currentMsgs = s.messages || [];
         return { 
           ...s, 
-          title: currentMsgs.length === 0 ? text.substring(0,25) + (text.length > 25 ? '...' : '') : s.title, 
+          title: currentMsgs.length === 0 ? text.substring(0, 25) + (text.length > 25 ? '...' : '') : s.title, 
           messages: [...currentMsgs, userMsg, botPlaceholder] 
         };
       }
@@ -120,31 +163,16 @@ export function useChatSessions(isAuthenticated, onRequireLogin) {
 
     } catch (err) {
       console.error("Streaming error:", err);
+      const errorMessage = err.message || "Unknown error occurred.";
+      let finalMessage = "";
       
-      const errorMessage = err.message || "";
-      let finalMessage = errorMessage;
-      let triggerLoginWindow = false;
-      
-      // 1. GUEST HIT LIMIT OR AUTH EXPIRED -> Prompt Login
-      if (
-        errorMessage.includes("GUEST_LIMIT_REACHED") || 
-        errorMessage.includes("AUTH_REQUIRED") || 
-        errorMessage.includes("403")
-      ) {
-        triggerLoginWindow = true;
+      if (errorMessage.includes("GUEST_LIMIT_REACHED") || errorMessage.includes("AUTH_REQUIRED") || errorMessage.includes("403")) {
         finalMessage = "Please sign in or create a free account to continue chatting.";
-      } 
-      // 2. REGISTERED USER HIT LIMIT -> Show 24 Hour Message
-      else if (errorMessage.includes("LIMIT_REACHED") || errorMessage.includes("429")) {
-        const resetTime = new Date();
-        resetTime.setHours(resetTime.getHours() + 24);
-        const timeString = resetTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        
-        finalMessage = `You have reached your daily interaction limit. Please try again tomorrow after ${timeString}.`;
-      } 
-      // 3. SERVER OR NETWORK ISSUE
-      else {
-        finalMessage = "We encountered an issue connecting to the server. Please try again.";
+        if (onRequireLogin) onRequireLogin();
+      } else if (errorMessage.includes("LIMIT_REACHED") || errorMessage.includes("429")) {
+        finalMessage = "You have reached your daily interaction limit. Please try again tomorrow.";
+      } else {
+        finalMessage = `Error: ${errorMessage}. Please check your backend console.`;
       }
 
       setSessions((prev) => prev.map((s) => {
@@ -157,11 +185,6 @@ export function useChatSessions(isAuthenticated, onRequireLogin) {
         }
         return s;
       }));
-
-      if (triggerLoginWindow && onRequireLogin) {
-        onRequireLogin();
-      }
-
     } finally {
       setLoading(false);
     }

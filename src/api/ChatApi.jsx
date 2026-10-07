@@ -23,24 +23,38 @@ const handleResponse = async (res) => {
   if (res.status === 429) {
     const isGuest = localStorage.getItem("isGuest") === "true";
     if (isGuest) {
-      // Guest hit their 10-call limit
       throw new Error("GUEST_LIMIT_REACHED: Please log in to continue.");
     } else {
-      // Registered user hit their 100-call limit
       throw new Error("LIMIT_REACHED: 429 Too Many Requests");
     }
   }
   
   if (!res.ok) {
-    const errorText = await res.text().catch(() => "Unknown Error");
+    let errorText = await res.text().catch(() => "Unknown Error");
+    try {
+      const jsonError = JSON.parse(errorText);
+      errorText = jsonError.message || jsonError.error || errorText;
+    } catch (e) {}
+    
+    errorText = errorText.replace(/^\d{3} [A-Z_]+ "/, "").replace(/"$/, "");
     throw new Error(errorText || `HTTP Error ${res.status}`);
   }
   return res;
 };
 
-// ==========================================
-// Auth APIs
-// ==========================================
+export const checkEmailExists = async (email) => {
+  try {
+    const res = await fetch(`${BASE_URL}/auth/check-email?email=${encodeURIComponent(email)}`, {
+      method: "GET",
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    return data.exists;
+  } catch (e) {
+    return false;
+  }
+};
+
 export const sendOtp = async (email) => {
   const res = await fetch(`${BASE_URL}/auth/send-otp`, {
     method: "POST",
@@ -99,9 +113,6 @@ export const upgradeGuest = async (email, otp, username, password) => {
   return res.json();
 };
 
-// ==========================================
-// Chat APIs
-// ==========================================
 export const fetchSessions = async () => {
   const res = await fetch(`${BASE_URL}/chat/sessions`, {
     headers: getHeaders()
@@ -132,7 +143,6 @@ export const sendChatMessage = async (sessionId, message) => {
   return res.json();
 };
 
-// Real-time Streaming Chat API with SSE Parsing
 export const streamChatMessage = async (sessionId, message, onChunk) => {
   const res = await fetch(`${BASE_URL}/chat/${sessionId}/stream`, {
     method: "POST",
@@ -144,26 +154,31 @@ export const streamChatMessage = async (sessionId, message, onChunk) => {
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder("utf-8");
+  
+  let buffer = "";
+  let eventData = []; 
 
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
     
-    const chunk = decoder.decode(value, { stream: true });
-    
-    const lines = chunk.split('\n');
+    buffer += decoder.decode(value, { stream: true });
+    let lines = buffer.split('\n');
+    buffer = lines.pop(); 
+
     for (const line of lines) {
       if (line.startsWith('data:')) {
-        const cleanText = line.substring(5);
-        onChunk(cleanText); 
+        eventData.push(line.substring(5));
+      } else if (line === "") {
+        if (eventData.length > 0) {
+          onChunk(eventData.join('\n'));
+          eventData = [];
+        }
       }
     }
   }
 };
 
-// ==========================================
-// User Profile APIs
-// ==========================================
 export const deleteAccount = async () => {
   const res = await fetch(`${BASE_URL}/users/me`, {
     method: "DELETE",

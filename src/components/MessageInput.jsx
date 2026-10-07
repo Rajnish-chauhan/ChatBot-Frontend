@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 
-export default function messageInput({ onSend, disabled, externalFile, onClearExternalFile }) {
+export default function MessageInput({ onSend, disabled, externalFile, onClearExternalFile }) {
   const [text, setText] = useState("");
   const [interimText, setInterimText] = useState(""); 
   const [localFile, setLocalFile] = useState(null);
@@ -75,7 +75,6 @@ export default function messageInput({ onSend, disabled, externalFile, onClearEx
   const handleFileSelection = (file) => {
     if (!file) return;
     
-    // Explicitly reject video and audio files
     const fileType = file.type;
     const fileName = file.name.toLowerCase();
     
@@ -84,12 +83,19 @@ export default function messageInput({ onSend, disabled, externalFile, onClearEx
                            fileName.endsWith(".m4a") || fileName.endsWith(".mov");
 
     if (isVideoOrAudio) {
-      alert("Video and audio files (MP4, MP3) are not accepted. Please upload only images (JPG, PNG) or documents (PDF, DOC, DOCX).");
+      alert("Video and audio files are not accepted. Please upload only images or documents.");
       return;
     }
 
     setLocalFile(file);
     if (onClearExternalFile) onClearExternalFile();
+  };
+
+  const handlePaste = (e) => {
+    if (e.clipboardData.files && e.clipboardData.files.length > 0) {
+      e.preventDefault(); 
+      handleFileSelection(e.clipboardData.files[0]);
+    }
   };
 
   const handleSubmit = (e) => {
@@ -125,18 +131,18 @@ export default function messageInput({ onSend, disabled, externalFile, onClearEx
   return (
     <div className="flex flex-col gap-2 shrink-0 pb-4">
       {activeFile && (
-        <div className="self-start flex items-center gap-3 px-4 py-2 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 shadow-sm">
-          <div className="w-8 h-8 flex items-center justify-center bg-indigo-100 dark:bg-indigo-900/50 rounded-lg text-indigo-600 dark:text-indigo-400">
+        <div className="self-start flex items-center gap-3 px-4 py-2 rounded-2xl bg-slate-100 dark:bg-[#2a2a2a] border border-slate-200 dark:border-slate-700 shadow-sm">
+          <div className="w-8 h-8 flex items-center justify-center bg-blue-100 dark:bg-blue-900/30 rounded-lg text-blue-600 dark:text-blue-400">
             📄
           </div>
-          <span className="text-sm font-medium truncate max-w-[200px]">{activeFile.name}</span>
+          <span className="text-sm font-medium truncate max-w-[200px] dark:text-white text-slate-800">{activeFile.name}</span>
           <button
             type="button"
             onClick={() => {
               setLocalFile(null);
               if (onClearExternalFile) onClearExternalFile();
             }}
-            className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full text-slate-500 transition"
+            className="p-1 hover:bg-slate-200 dark:hover:bg-[#3a3a3a] rounded-full text-slate-500 transition"
           >
             ✕
           </button>
@@ -145,9 +151,8 @@ export default function messageInput({ onSend, disabled, externalFile, onClearEx
 
       <form
         onSubmit={handleSubmit}
-        className="flex items-center gap-2 p-2 rounded-full bg-slate-100 dark:bg-[#1e1f20] border border-slate-200 dark:border-slate-800 shadow-sm transition-all h-14"
+        className="flex items-center gap-2 p-2 rounded-full bg-slate-100 dark:bg-[#1e1e1e] border border-slate-200 dark:border-slate-800 shadow-sm transition-all h-14"
       >
-        {/* Restrict input accept attribute strictly to images and documents */}
         <input
           type="file"
           accept="image/jpeg,image/png,.pdf,.doc,.docx"
@@ -163,7 +168,7 @@ export default function messageInput({ onSend, disabled, externalFile, onClearEx
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
-          className="p-2.5 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition shrink-0"
+          className="p-2.5 rounded-full hover:bg-slate-200 dark:hover:bg-[#2a2a2a] text-slate-600 dark:text-slate-300 transition shrink-0"
         >
           <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <line x1="12" y1="5" x2="12" y2="19"></line>
@@ -176,7 +181,7 @@ export default function messageInput({ onSend, disabled, externalFile, onClearEx
             {[...Array(40)].map((_, i) => (
               <div
                 key={i}
-                className="w-0.5 bg-slate-400 dark:bg-slate-500 rounded-full animate-pulse"
+                className="w-0.5 bg-blue-500 rounded-full animate-pulse"
                 style={{
                   height: `${Math.max(20, Math.random() * 100)}%`,
                   animationDelay: `${Math.random()}s`,
@@ -190,9 +195,10 @@ export default function messageInput({ onSend, disabled, externalFile, onClearEx
             type="text"
             value={text + (interimText ? (text ? " " : "") + interimText : "")}
             onChange={(e) => setText(e.target.value)}
-            placeholder="Ask anything..."
+            onPaste={handlePaste}
+            placeholder="Ask anything or paste an image..."
             disabled={disabled}
-            className="flex-1 bg-transparent px-2 py-2 text-base focus:outline-none text-slate-900 dark:text-slate-100 placeholder-slate-500 disabled:opacity-50"
+            className="flex-1 bg-transparent px-2 py-2 text-[15px] focus:outline-none text-slate-900 dark:text-slate-100 placeholder-slate-500 disabled:opacity-50"
           />
         )}
 
@@ -200,7 +206,7 @@ export default function messageInput({ onSend, disabled, externalFile, onClearEx
           <button
             type="button"
             onClick={handleMicClick}
-            className="w-10 h-10 flex items-center justify-center rounded-full bg-slate-300 dark:bg-[#3b3d3f] hover:bg-slate-400 dark:hover:bg-[#4b4d4f] transition shrink-0"
+            className="w-10 h-10 flex items-center justify-center rounded-full bg-slate-300 dark:bg-[#3a3a3a] hover:bg-slate-400 dark:hover:bg-[#4a4a4a] transition shrink-0"
           >
             <div className="w-3 h-3 bg-slate-800 dark:bg-slate-200 rounded-[2px]"></div>
           </button>
@@ -208,7 +214,7 @@ export default function messageInput({ onSend, disabled, externalFile, onClearEx
           <button
             type="button"
             onClick={handleMicClick}
-            className="p-2.5 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition shrink-0"
+            className="p-2.5 rounded-full hover:bg-slate-200 dark:hover:bg-[#2a2a2a] text-slate-600 dark:text-slate-300 transition shrink-0"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"></path>

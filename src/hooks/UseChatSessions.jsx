@@ -20,7 +20,6 @@ export function useChatSessions(isAuthenticated, onRequireLogin) {
     }
   }, [isAuthenticated]);
 
-  // Persist selected session ID in localStorage
   useEffect(() => {
     if (currentSessionId) {
       localStorage.setItem("currentSessionId", String(currentSessionId));
@@ -32,7 +31,6 @@ export function useChatSessions(isAuthenticated, onRequireLogin) {
       const data = await fetchSessions();
       
       if (Array.isArray(data) && data.length > 0) {
-        // Normalize sender casing so ChatBox renders user/bot bubbles correctly
         const safeData = data.map(s => ({ 
           ...s, 
           messages: (s.messages || []).map(m => ({
@@ -44,14 +42,12 @@ export function useChatSessions(isAuthenticated, onRequireLogin) {
         safeData.sort((a, b) => a.id - b.id);
         setSessions(safeData);
 
-        // Restore saved session ID or pick the most recent
         const savedId = Number(localStorage.getItem("currentSessionId"));
         const exists = safeData.some(s => s.id === savedId);
 
         if (exists) {
           setCurrentSessionId(savedId);
         } else {
-          // Select the last active session
           const lastActive = [...safeData].reverse().find(s => s.messages.length > 0);
           const chosen = lastActive ? lastActive.id : safeData[safeData.length - 1].id;
           setCurrentSessionId(chosen);
@@ -100,7 +96,7 @@ export function useChatSessions(isAuthenticated, onRequireLogin) {
       if (err.message?.includes("GUEST_LIMIT") || err.message?.includes("AUTH_REQUIRED")) {
         if (onRequireLogin) onRequireLogin();
       } else {
-        alert("Session creation failed: " + err.message);
+        console.error("Session creation failed: " + err.message);
       }
       return null;
     } finally {
@@ -108,7 +104,8 @@ export function useChatSessions(isAuthenticated, onRequireLogin) {
     }
   };
 
-  const handleSend = async (text, file) => {
+  // files is now an array
+  const handleSend = async (text, files = []) => {
     let activeSessionId = currentSessionId;
 
     if (!activeSessionId) {
@@ -116,13 +113,17 @@ export function useChatSessions(isAuthenticated, onRequireLogin) {
       if (!activeSessionId) return; 
     }
 
-    const activeFile = file || droppedFile;
+    // Build visual representations for multiple files
+    const filePreviews = files.map(file => ({
+        url: URL.createObjectURL(file),
+        name: file.name,
+        isDocument: file.type.includes("pdf") || file.name.endsWith(".doc") || file.name.endsWith(".docx")
+    }));
+
     const userMsg = { 
       sender: "user", 
       text, 
-      image: activeFile ? URL.createObjectURL(activeFile) : null,
-      isDocument: activeFile && (activeFile.type.includes("pdf") || activeFile.name.endsWith(".doc") || activeFile.name.endsWith(".docx")),
-      fileName: activeFile ? activeFile.name : null
+      files: filePreviews // Store array of files instead of single image
     };
 
     const botPlaceholder = { sender: "bot", text: "" };
@@ -132,7 +133,7 @@ export function useChatSessions(isAuthenticated, onRequireLogin) {
         const currentMsgs = s.messages || [];
         return { 
           ...s, 
-          title: currentMsgs.length === 0 ? text.substring(0, 25) + (text.length > 25 ? '...' : '') : s.title, 
+          title: currentMsgs.length === 0 ? (text ? text.substring(0, 25) + (text.length > 25 ? '...' : '') : "File Analysis") : s.title, 
           messages: [...currentMsgs, userMsg, botPlaceholder] 
         };
       }
@@ -145,7 +146,7 @@ export function useChatSessions(isAuthenticated, onRequireLogin) {
     try {
       let fullBotText = "";
 
-      await streamChatMessage(activeSessionId, text, activeFile, (chunk) => {
+      await streamChatMessage(activeSessionId, text, files, (chunk) => {
         setLoading(false);
         fullBotText += chunk;
 

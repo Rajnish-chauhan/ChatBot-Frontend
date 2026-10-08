@@ -4,7 +4,6 @@ const getHeaders = (isFormData = false) => {
   const token = localStorage.getItem("token");
   const headers = {};
   if (token) headers["Authorization"] = `Bearer ${token}`;
-  // Browser will automatically set the Content-Type with boundary for FormData
   if (!isFormData) headers["Content-Type"] = "application/json";
   return headers;
 };
@@ -144,19 +143,24 @@ export const sendChatMessage = async (sessionId, message) => {
   return res.json();
 };
 
-export const streamChatMessage = async (sessionId, message, file, onChunk) => {
+export const streamChatMessage = async (sessionId, message, files = [], onChunk) => {
   let body;
   let headers;
 
-  if (file) {
+  if (files && files.length > 0) {
     const formData = new FormData();
-    formData.append("text", message.trim() ? message : "Please analyze this file.");
-    formData.append("file", file);
+    formData.append("text", message.trim() ? message : "Please analyze the attached files.");
+    
+    // Append all files under the key "files"
+    files.forEach(file => {
+      formData.append("files", file);
+    });
+    
     body = formData;
-    headers = getHeaders(true); // Pass true to remove application/json
+    headers = getHeaders(true); 
   } else {
     body = JSON.stringify({ text: message });
-    headers = getHeaders(false); // Pass false to keep application/json
+    headers = getHeaders(false); 
   }
 
   const res = await fetch(`${BASE_URL}/chat/${sessionId}/stream`, {

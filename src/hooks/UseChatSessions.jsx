@@ -121,7 +121,7 @@ export function useChatSessions(isAuthenticated, onRequireLogin) {
       sender: "user", 
       text, 
       image: activeFile ? URL.createObjectURL(activeFile) : null,
-      isDocument: activeFile && (activeFile.type.includes("pdf") || activeFile.name.endsWith(".doc")),
+      isDocument: activeFile && (activeFile.type.includes("pdf") || activeFile.name.endsWith(".doc") || activeFile.name.endsWith(".docx")),
       fileName: activeFile ? activeFile.name : null
     };
 
@@ -145,7 +145,7 @@ export function useChatSessions(isAuthenticated, onRequireLogin) {
     try {
       let fullBotText = "";
 
-      await streamChatMessage(activeSessionId, text, (chunk) => {
+      await streamChatMessage(activeSessionId, text, activeFile, (chunk) => {
         setLoading(false);
         fullBotText += chunk;
 

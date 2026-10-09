@@ -6,7 +6,75 @@
   html, body, #root {
     @apply h-full w-full m-0 p-0 overflow-hidden;
   }
+
   body {
     @apply bg-white text-slate-900 dark:bg-[#121212] dark:text-slate-50 antialiased;
   }
+
+  /* Automatically aligns native browser controls and scrollbars with active theme */
+  html {
+    color-scheme: light;
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
+}
+
+/* Enforce pointer/hand cursor on all buttons, links, and their internal elements across the app */
+button,
+[role="button"],
+input[type="button"],
+input[type="submit"],
+input[type="reset"],
+a {
+  cursor: pointer !important;
+}
+
+/* Ensure child elements like SVG icons and text spans inherit pointer cursor */
+button *,
+[role="button"] *,
+a * {
+  cursor: pointer !important;
+}
+
+/* Displays not-allowed cursor when buttons or elements are disabled */
+button:disabled,
+button:disabled *,
+[role="button"]:disabled,
+[role="button"]:disabled *,
+input:disabled,
+[disabled] {
+  cursor: not-allowed !important;
+}
+
+/* Custom slim modern scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Scrollbar thumb for Light Mode */
+::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: #94a3b8;
+}
+
+/* Scrollbar thumb for Dark Mode */
+.dark ::-webkit-scrollbar-thumb,
+.dark::-webkit-scrollbar-thumb {
+  background-color: #333333;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover,
+.dark::-webkit-scrollbar-thumb:hover {
+  background-color: #4a4a4a;
 }

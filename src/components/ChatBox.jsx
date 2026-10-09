@@ -1,14 +1,16 @@
 import React, { useRef, useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+
+// Vite-safe ESM imports for react-syntax-highlighter
+import SyntaxHighlighter from "react-syntax-highlighter/dist/esm/prism";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 
-// CodeBlock component with syntax highlighting, copy, and download actions
+// CodeBlock component with syntax highlighting, copy, and download buttons
 const CodeBlock = ({ language, code }) => {
   const [copied, setCopied] = useState(false);
 
-  // Normalize language name for the syntax highlighter and file extension
+  // Normalize language for highlighter and download file extension
   const normalizedLanguage = language ? language.toLowerCase().trim() : "text";
 
   const handleCopy = () => {
@@ -54,7 +56,7 @@ const CodeBlock = ({ language, code }) => {
   return (
     <div className="rounded-xl overflow-hidden my-4 border border-slate-700/60 bg-[#1e1e1e] shadow-md w-full max-w-full">
       {/* Top Header Bar */}
-      <div className="flex items-center justify-between px-4 py-2.5 bg-[#252526] border-b border-white/5">
+      <div className="flex items-center justify-between px-4 py-2 bg-[#252526] border-b border-white/5">
         <span className="text-xs font-semibold text-slate-300 capitalize tracking-wider">
           {language || "code"}
         </span>
@@ -120,7 +122,7 @@ const CodeBlock = ({ language, code }) => {
         </div>
       </div>
 
-      {/* Code body with language-specific syntax highlighting */}
+      {/* Code body with syntax highlighting */}
       <div className="overflow-x-auto text-[13.5px] leading-relaxed">
         <SyntaxHighlighter
           language={normalizedLanguage === "code" ? "text" : normalizedLanguage}
@@ -143,14 +145,13 @@ const CodeBlock = ({ language, code }) => {
   );
 };
 
-// Formats non-code markdown text such as headings, bold words, and bullet points
+// Formats non-code markdown text
 const MarkdownText = ({ content }) => {
   return (
     <div className="text-[15px] leading-relaxed text-slate-900 dark:text-slate-100">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
-          // Headings styling
           h1: ({ children }) => (
             <h1 className="text-2xl font-bold my-3 text-slate-900 dark:text-white">
               {children}
@@ -171,11 +172,9 @@ const MarkdownText = ({ content }) => {
               {children}
             </h4>
           ),
-          // Paragraph styling
           p: ({ children }) => (
             <p className="mb-2 leading-relaxed last:mb-0">{children}</p>
           ),
-          // List styling
           ul: ({ children }) => (
             <ul className="list-disc list-outside ml-5 mb-2.5 space-y-1">
               {children}
@@ -189,25 +188,21 @@ const MarkdownText = ({ content }) => {
           li: ({ children }) => (
             <li className="leading-relaxed pl-1">{children}</li>
           ),
-          // Bold text styling
           strong: ({ children }) => (
             <strong className="font-semibold text-slate-900 dark:text-white">
               {children}
             </strong>
           ),
-          // Inline code styling
           code: ({ children }) => (
             <code className="bg-slate-200 dark:bg-[#333333] px-1.5 py-0.5 rounded text-[13.5px] font-mono text-pink-600 dark:text-pink-400">
               {children}
             </code>
           ),
-          // Blockquote styling
           blockquote: ({ children }) => (
             <blockquote className="border-l-4 border-blue-500 pl-4 py-1 my-2 bg-slate-100 dark:bg-[#252525] rounded-r italic text-slate-700 dark:text-slate-300">
               {children}
             </blockquote>
           ),
-          // External link styling
           a: ({ href, children }) => (
             <a
               href={href}
@@ -230,14 +225,12 @@ const MarkdownText = ({ content }) => {
 const formatMessage = (text) => {
   if (!text) return null;
 
-  // Matches complete code blocks as well as active streaming code blocks
   const regex = /```([a-zA-Z0-9+#_-]*)\n?([\s\S]*?)(?:```|$)/g;
   const elements = [];
   let lastIndex = 0;
   let match;
 
   while ((match = regex.exec(text)) !== null) {
-    // Append text chunk before code block
     if (match.index > lastIndex) {
       const textChunk = text.slice(lastIndex, match.index).trim();
       if (textChunk) {
@@ -250,7 +243,6 @@ const formatMessage = (text) => {
     const language = match[1] || "code";
     const code = match[2];
 
-    // Render code block in the designated CodeBlock container
     if (match[0].startsWith("```")) {
       elements.push(
         <CodeBlock
@@ -264,7 +256,6 @@ const formatMessage = (text) => {
     lastIndex = match.index + match[0].length;
   }
 
-  // Append remaining text after the final code block
   if (lastIndex < text.length) {
     const textChunk = text.slice(lastIndex).trim();
     if (textChunk) {
@@ -277,8 +268,8 @@ const formatMessage = (text) => {
   return elements.length > 0 ? elements : <MarkdownText content={text} />;
 };
 
-// Copy button component for the full message
-const MessageCopyButton = ({ text }) => {
+// Copy button for user messages positioned neatly beneath the text
+const UserMessageCopyButton = ({ text }) => {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
@@ -291,34 +282,40 @@ const MessageCopyButton = ({ text }) => {
     <button
       onClick={handleCopy}
       title="Copy message"
-      className="ml-2 p-1.5 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-slate-600 dark:hover:text-white transition-all bg-white dark:bg-[#1e1e1e] border border-slate-200 dark:border-slate-700 rounded-full shadow-sm flex shrink-0 self-start mt-2"
+      className="p-1 opacity-0 group-hover:opacity-100 text-slate-400 hover:text-slate-600 dark:hover:text-white transition-opacity flex items-center gap-1 text-[11px]"
     >
       {copied ? (
-        <svg
-          xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)"
-          width="14"
-          height="14"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth="2.5"
-          className="text-emerald-500"
-        >
-          <polyline points="20 6 9 17 4 12"></polyline>
-        </svg>
+        <>
+          <svg
+            xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)"
+            width="13"
+            height="13"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            className="text-emerald-500"
+          >
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+          <span className="text-emerald-500 font-medium">Copied</span>
+        </>
       ) : (
-        <svg
-          xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)"
-          width="14"
-          height="14"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth="2"
-        >
-          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-        </svg>
+        <>
+          <svg
+            xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)"
+            width="13"
+            height="13"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth="2"
+          >
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+          </svg>
+          <span>Copy</span>
+        </>
       )}
     </button>
   );
@@ -328,7 +325,6 @@ const MessageCopyButton = ({ text }) => {
 export default function ChatBox({ messages, loading }) {
   const endRef = useRef(null);
 
-  // Automatically scroll down on new messages
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
@@ -350,57 +346,54 @@ export default function ChatBox({ messages, loading }) {
             msg.sender === "user" ? "justify-end" : "justify-start"
           }`}
         >
-          <div
-            className={`relative flex items-start max-w-[95%] md:max-w-[85%] ${
-              msg.sender === "user" ? "flex-row-reverse" : "flex-row"
-            }`}
-          >
-            <div
-              className={`w-fit px-5 py-3 rounded-3xl ${
-                msg.sender === "user"
-                  ? "bg-slate-100 dark:bg-[#2a2a2a] text-slate-900 dark:text-slate-100 rounded-tr-sm"
-                  : "bg-transparent text-slate-900 dark:text-slate-100 w-full"
-              }`}
-            >
-              {/* Attachment file previews */}
-              {msg.files && msg.files.length > 0 && (
-                <div className="mb-3 flex flex-wrap gap-2">
-                  {msg.files.map((filePreview, fIdx) =>
-                    filePreview.isDocument ? (
-                      <div
-                        key={fIdx}
-                        className="flex items-center gap-3 px-3 py-2 rounded-xl bg-white dark:bg-[#1e1e1e] border border-slate-200 dark:border-slate-700 shadow-sm w-fit"
-                      >
-                        <span className="text-xl">📄</span>
-                        <span className="text-xs font-medium truncate max-w-[150px]">
-                          {filePreview.name || "Document"}
-                        </span>
-                      </div>
-                    ) : (
-                      <img
-                        key={fIdx}
-                        src={filePreview.url}
-                        alt="Uploaded"
-                        className="h-24 w-24 md:h-32 md:w-32 rounded-xl object-cover shadow-sm border border-slate-200 dark:border-slate-600 bg-white dark:bg-[#1e1e1e]"
-                      />
-                    )
-                  )}
-                </div>
-              )}
-
-              {/* User text displays as plain text; Bot response is formatted with markdown and syntax highlighting */}
-              {msg.sender === "user" ? (
-                <span className="whitespace-pre-wrap leading-relaxed text-[15px]">
+          {msg.sender === "user" ? (
+            /* User Message: bubble with copy button positioned below */
+            <div className="flex flex-col items-end max-w-[90%] md:max-w-[80%]">
+              <div className="w-fit px-5 py-3 rounded-3xl bg-slate-100 dark:bg-[#2a2a2a] text-slate-900 dark:text-slate-100 rounded-tr-sm text-[15px]">
+                {msg.files && msg.files.length > 0 && (
+                  <div className="mb-3 flex flex-wrap gap-2">
+                    {msg.files.map((filePreview, fIdx) =>
+                      filePreview.isDocument ? (
+                        <div
+                          key={fIdx}
+                          className="flex items-center gap-3 px-3 py-2 rounded-xl bg-white dark:bg-[#1e1e1e] border border-slate-200 dark:border-slate-700 shadow-sm w-fit"
+                        >
+                          <span className="text-xl">📄</span>
+                          <span className="text-xs font-medium truncate max-w-[150px]">
+                            {filePreview.name || "Document"}
+                          </span>
+                        </div>
+                      ) : (
+                        <img
+                          key={fIdx}
+                          src={filePreview.url}
+                          alt="Uploaded"
+                          className="h-24 w-24 md:h-32 md:w-32 rounded-xl object-cover shadow-sm border border-slate-200 dark:border-slate-600 bg-white dark:bg-[#1e1e1e]"
+                        />
+                      )
+                    )}
+                  </div>
+                )}
+                <span className="whitespace-pre-wrap leading-relaxed">
                   {msg.text}
                 </span>
-              ) : (
-                formatMessage(msg.text)
+              </div>
+
+              {/* Copy button displayed right under user text */}
+              {msg.text && (
+                <div className="mt-1 mr-1">
+                  <UserMessageCopyButton text={msg.text} />
+                </div>
               )}
             </div>
-
-            {/* Quick copy button */}
-            {msg.text && <MessageCopyButton text={msg.text} />}
-          </div>
+          ) : (
+            /* Bot Message: Full-text copy button is removed; Only code blocks have Copy/Download */
+            <div className="relative flex items-start max-w-[95%] md:max-w-[85%] w-full">
+              <div className="w-full text-slate-900 dark:text-slate-100">
+                {formatMessage(msg.text)}
+              </div>
+            </div>
+          )}
         </div>
       ))}
 

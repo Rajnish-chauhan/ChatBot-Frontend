@@ -16,12 +16,26 @@ export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [username, setUsername] = useState("");
   const [isGuest, setIsGuest] = useState(false);
-  
+
   const [requiresPasswordSetup, setRequiresPasswordSetup] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
 
+  // Initialize and synchronize theme across root document
+  useEffect(() => {
+    const savedTheme = localStorage.getItem("theme") || "dark";
+    const root = document.documentElement;
+    if (savedTheme === "dark") {
+      root.classList.add("dark");
+      root.style.colorScheme = "dark";
+    } else {
+      root.classList.remove("dark");
+      root.style.colorScheme = "light";
+    }
+  }, []);
+
+  // Handle URL tokens from OAuth2 redirect and persistent session
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const tokenFromUrl = urlParams.get("token");
@@ -60,8 +74,12 @@ export default function App() {
     setIsAuthenticated(true);
   };
 
+  // Logout preserves user's theme preference
   const handleLogout = () => {
+    const savedTheme = localStorage.getItem("theme") || "dark";
     localStorage.clear();
+    localStorage.setItem("theme", savedTheme);
+
     setIsAuthenticated(false);
     setUsername("");
     setIsGuest(false);
@@ -76,7 +94,7 @@ export default function App() {
       await deleteAccount();
       handleLogout();
     } catch (error) {
-      alert("Failed to delete account: " + error.message);
+      console.error("Failed to delete account: ", error);
       setShowDeleteModal(false);
     }
   };
@@ -115,29 +133,37 @@ export default function App() {
     droppedFile,
     setDroppedFile,
     handleNewChat,
-    handleSend
+    handleSend,
   } = useChatSessions(isAuthenticated, handleAuthRequired);
 
+  // Render Login and Registration Screen with ThemeToggle at top right
   if (!isAuthenticated) {
-    return <Login onLoginSuccess={handleLoginSuccess} />;
+    return (
+      <div className="relative min-h-screen bg-slate-50 dark:bg-[#121212] transition-colors">
+        <div className="absolute top-5 right-6 z-50">
+          <ThemeToggle />
+        </div>
+        <Login onLoginSuccess={handleLoginSuccess} />
+      </div>
+    );
   }
 
   return (
     <>
-      <OAuthPasswordSetupModal 
-        isOpen={requiresPasswordSetup} 
+      <OAuthPasswordSetupModal
+        isOpen={requiresPasswordSetup}
         initialUsername={username}
-        onSuccess={onOAuthSetupSuccess} 
+        onSuccess={onOAuthSetupSuccess}
       />
 
-      <GuestUpgradeModal 
-        isOpen={showUpgradeModal} 
+      <GuestUpgradeModal
+        isOpen={showUpgradeModal}
         onClose={() => setShowUpgradeModal(false)}
-        onSuccess={onGuestUpgradeSuccess} 
+        onSuccess={onGuestUpgradeSuccess}
       />
 
       <DeleteConfirmModal
-        isOpen={showDeleteModal} 
+        isOpen={showDeleteModal}
         onClose={() => setShowDeleteModal(false)}
         onConfirm={confirmDeleteAccount}
       />
@@ -164,16 +190,15 @@ export default function App() {
 
       <DropZone onDrop={(file) => setDroppedFile(file)}>
         <div className="h-full w-full flex bg-white dark:bg-[#121212] transition-colors overflow-hidden">
-          
-          <Sidebar 
-            sessions={sessions} 
+          <Sidebar
+            sessions={sessions}
             currentSessionId={currentSessionId}
-            onNewChat={handleNewChat} 
+            onNewChat={handleNewChat}
             onSelectSession={setCurrentSessionId}
             onLogout={handleLogout}
             onDeleteAccount={() => setShowDeleteModal(true)}
             onOpenProfile={() => setShowProfileModal(true)}
-            username={username} 
+            username={username}
             isGuest={isGuest}
           />
 
@@ -197,9 +222,9 @@ export default function App() {
 
             <main className="flex-1 flex flex-col w-full max-w-4xl mx-auto px-4 py-4 gap-4 overflow-hidden">
               <ChatBox messages={currentSession?.messages || []} loading={loading} />
-              <MessageInput 
-                onSend={handleSend} 
-                disabled={loading} 
+              <MessageInput
+                onSend={handleSend}
+                disabled={loading}
                 externalFile={droppedFile}
                 onClearExternalFile={() => setDroppedFile(null)}
               />

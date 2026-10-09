@@ -14,12 +14,16 @@ const handleResponse = async (res) => {
     if (isGuest) {
       throw new Error("AUTH_REQUIRED: Please log in or create an account.");
     } else {
+      // Preserve theme preference before clearing session credentials
+      const savedTheme = localStorage.getItem("theme");
       localStorage.clear();
+      if (savedTheme) localStorage.setItem("theme", savedTheme);
+
       window.location.reload();
       throw new Error("AUTH_REQUIRED: Your session has expired.");
     }
   }
-  
+
   if (res.status === 429) {
     const isGuest = localStorage.getItem("isGuest") === "true";
     if (isGuest) {
@@ -28,14 +32,14 @@ const handleResponse = async (res) => {
       throw new Error("LIMIT_REACHED: 429 Too Many Requests");
     }
   }
-  
+
   if (!res.ok) {
     let errorText = await res.text().catch(() => "Unknown Error");
     try {
       const jsonError = JSON.parse(errorText);
       errorText = jsonError.message || jsonError.error || errorText;
     } catch (e) {}
-    
+
     errorText = errorText.replace(/^\d{3} [A-Z_]+ "/, "").replace(/"$/, "");
     throw new Error(errorText || `HTTP Error ${res.status}`);
   }
@@ -59,7 +63,7 @@ export const sendOtp = async (email) => {
   const res = await fetch(`${BASE_URL}/auth/send-otp`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email })
+    body: JSON.stringify({ email }),
   });
   await handleResponse(res);
   return res.text();
@@ -69,7 +73,7 @@ export const registerWithOtp = async (email, otp, username, password) => {
   const res = await fetch(`${BASE_URL}/auth/register-with-otp`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, otp, username, password })
+    body: JSON.stringify({ email, otp, username, password }),
   });
   await handleResponse(res);
   return res.json();
@@ -79,7 +83,7 @@ export const loginUser = async (username, password) => {
   const res = await fetch(`${BASE_URL}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password })
+    body: JSON.stringify({ username, password }),
   });
   await handleResponse(res);
   return res.json();
@@ -87,7 +91,7 @@ export const loginUser = async (username, password) => {
 
 export const guestLogin = async () => {
   const res = await fetch(`${BASE_URL}/auth/guest`, {
-    method: "POST"
+    method: "POST",
   });
   await handleResponse(res);
   return res.json();
@@ -97,7 +101,7 @@ export const setCredentials = async (username, password) => {
   const res = await fetch(`${BASE_URL}/auth/set-credentials`, {
     method: "POST",
     headers: getHeaders(),
-    body: JSON.stringify({ username, password })
+    body: JSON.stringify({ username, password }),
   });
   await handleResponse(res);
   return res.json();
@@ -107,7 +111,7 @@ export const upgradeGuest = async (email, otp, username, password) => {
   const res = await fetch(`${BASE_URL}/auth/upgrade-guest`, {
     method: "POST",
     headers: getHeaders(),
-    body: JSON.stringify({ email, otp, username, password })
+    body: JSON.stringify({ email, otp, username, password }),
   });
   await handleResponse(res);
   return res.json();
@@ -115,7 +119,7 @@ export const upgradeGuest = async (email, otp, username, password) => {
 
 export const fetchSessions = async () => {
   const res = await fetch(`${BASE_URL}/chat/sessions`, {
-    headers: getHeaders()
+    headers: getHeaders(),
   });
   await handleResponse(res);
   return res.json();
@@ -125,7 +129,7 @@ export const createSession = async (title) => {
   const res = await fetch(`${BASE_URL}/chat/sessions`, {
     method: "POST",
     headers: getHeaders(),
-    body: JSON.stringify({ title, messages: [] })
+    body: JSON.stringify({ title, messages: [] }),
   });
   await handleResponse(res);
   const data = await res.json();
@@ -150,17 +154,16 @@ export const streamChatMessage = async (sessionId, message, files = [], onChunk)
   if (files && files.length > 0) {
     const formData = new FormData();
     formData.append("text", message.trim() ? message : "Please analyze the attached files.");
-    
-    // Append all files under the key "files"
-    files.forEach(file => {
+
+    files.forEach((file) => {
       formData.append("files", file);
     });
-    
+
     body = formData;
-    headers = getHeaders(true); 
+    headers = getHeaders(true);
   } else {
     body = JSON.stringify({ text: message });
-    headers = getHeaders(false); 
+    headers = getHeaders(false);
   }
 
   const res = await fetch(`${BASE_URL}/chat/${sessionId}/stream`, {
@@ -173,24 +176,24 @@ export const streamChatMessage = async (sessionId, message, files = [], onChunk)
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder("utf-8");
-  
+
   let buffer = "";
-  let eventData = []; 
+  let eventData = [];
 
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    
+
     buffer += decoder.decode(value, { stream: true });
-    let lines = buffer.split('\n');
-    buffer = lines.pop(); 
+    let lines = buffer.split("\n");
+    buffer = lines.pop();
 
     for (const line of lines) {
-      if (line.startsWith('data:')) {
+      if (line.startsWith("data:")) {
         eventData.push(line.substring(5));
       } else if (line === "") {
         if (eventData.length > 0) {
-          onChunk(eventData.join('\n'));
+          onChunk(eventData.join("\n"));
           eventData = [];
         }
       }
@@ -201,9 +204,9 @@ export const streamChatMessage = async (sessionId, message, files = [], onChunk)
 export const deleteAccount = async () => {
   const res = await fetch(`${BASE_URL}/users/me`, {
     method: "DELETE",
-    headers: getHeaders()
+    headers: getHeaders(),
   });
-  
+
   if (!res.ok) {
     const errorText = await res.text().catch(() => "Unknown Error");
     throw new Error(errorText || `HTTP Error ${res.status}`);

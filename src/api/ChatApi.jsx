@@ -1,4 +1,6 @@
-const BASE_URL = "http://localhost:8080/api";
+// Resolves base backend URL dynamically from environment (Vercel in production, localhost in development)
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
+const BASE_URL = `${API_BASE}/api`;
 
 const getHeaders = (isFormData = false) => {
   const token = localStorage.getItem("token");
@@ -14,7 +16,7 @@ const handleResponse = async (res) => {
     if (isGuest) {
       throw new Error("AUTH_REQUIRED: Please log in or create an account.");
     } else {
-      // Preserve theme preference before clearing session credentials
+      // Preserve user theme before clearing auth session
       const savedTheme = localStorage.getItem("theme");
       localStorage.clear();
       if (savedTheme) localStorage.setItem("theme", savedTheme);

@@ -12,7 +12,7 @@ export default function Login({ onLoginSuccess }) {
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
 
-  // Password visibility states
+  // Password visibility states (Eye icons)
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -23,7 +23,10 @@ export default function Login({ onLoginSuccess }) {
   const [successMsg, setSuccessMsg] = useState("");
   const [liveEmailError, setLiveEmailError] = useState("");
 
-  // Catch OAuth2 errors passed back via URL parameters
+  // Resolves backend base URL dynamically (e.g. https://api.rajnishsystems.in in production)
+  const BACKEND_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
+
+  // Capture OAuth2 failure errors passed via URL query parameters
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const errorFromUrl = urlParams.get("error");
@@ -107,6 +110,7 @@ export default function Login({ onLoginSuccess }) {
       return;
     }
 
+    // Verify passwords match
     if (password !== confirmPassword) {
       setError("Passwords do not match. Please ensure both passwords are identical.");
       return;
@@ -133,6 +137,7 @@ export default function Login({ onLoginSuccess }) {
     <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-[#121212] p-4 transition-colors">
       <div className="w-full max-w-md bg-white dark:bg-[#1c1c1c] rounded-[20px] shadow-xl border border-slate-200 dark:border-[#2d2d2d] p-8">
         
+        {/* Header */}
         <div className="text-center mb-8">
           <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">
             {isRegistering ? "Create Account" : "Sign In"}
@@ -144,12 +149,14 @@ export default function Login({ onLoginSuccess }) {
           </p>
         </div>
 
+        {/* Error notification */}
         {error && (
           <div className="mb-6 bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 p-3 rounded-lg text-sm text-center border border-red-100 dark:border-red-500/20">
             {error}
           </div>
         )}
 
+        {/* Success notification */}
         {successMsg && (
           <div className="mb-6 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 p-3 rounded-lg text-sm text-center border border-emerald-100 dark:border-emerald-500/20">
             {successMsg}
@@ -402,11 +409,11 @@ export default function Login({ onLoginSuccess }) {
           </form>
         )}
 
-        {/* Google OAuth Button */}
+        {/* Google OAuth Button using dynamic backend base URL */}
         <div className="mt-8 pt-6 border-t border-slate-200 dark:border-[#2d2d2d]">
           <button
             type="button"
-            onClick={() => (window.location.href = "http://localhost:8080/oauth2/authorization/google")}
+            onClick={() => (window.location.href = `${BACKEND_BASE}/oauth2/authorization/google`)}
             className="w-full flex items-center justify-center gap-3 bg-white dark:bg-[#2a2a2a] border border-slate-300 dark:border-[#3a3a3a] text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-[#333] font-medium py-3 rounded-xl transition-colors cursor-pointer"
           >
             <svg viewBox="0 0 24 24" className="w-5 h-5 pointer-events-none">
@@ -430,7 +437,6 @@ export default function Login({ onLoginSuccess }) {
             <span className="pointer-events-none">Continue with Google</span>
           </button>
         </div>
-
       </div>
     </div>
   );

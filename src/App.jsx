@@ -4,7 +4,7 @@ import ChatBox from "./components/ChatBox";
 import MessageInput from "./components/MessageInput";
 import DropZone from "./components/DropZone";
 import Sidebar from "./components/Sidebar";
-import Login from "./components/Login";
+import Login from "./components/x";
 import OAuthPasswordSetupModal from "./components/OAuthPasswordSetupModal";
 import GuestUpgradeModal from "./components/GuestUpgradeModal";
 import DeleteConfirmModal from "./components/DeleteConfirmModal";

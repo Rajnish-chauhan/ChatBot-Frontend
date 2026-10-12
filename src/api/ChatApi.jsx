@@ -1,4 +1,15 @@
-const rawEnvUrl = import.meta.env?.VITE_API_URL || 'http://localhost:8080/api';
+// Resolve API URL based on environment or current domain
+const getApiUrl = () => {
+  if (import.meta.env?.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
+  }
+  if (typeof window !== 'undefined' && window.location.hostname.includes('rajnishsystems.in')) {
+    return 'https://api.rajnishsystems.in/api';
+  }
+  return 'http://localhost:8080/api';
+};
+
+const rawEnvUrl = getApiUrl();
 export const API_BASE_URL = rawEnvUrl.endsWith('/api') ? rawEnvUrl : `${rawEnvUrl}/api`;
 export const BASE_URL = API_BASE_URL.replace(/\/api\/?$/, '');
 export const OAUTH2_GOOGLE_URL = `${BASE_URL}/oauth2/authorization/google`;

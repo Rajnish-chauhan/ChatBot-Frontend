@@ -1,217 +1,514 @@
-// Resolves base backend URL dynamically from environment (Vercel in production, localhost in development)
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8080";
-const BASE_URL = `${API_BASE}/api`;
+const rawEnvUrl = import.meta.env?.VITE_API_URL || 'http://localhost:8080/api';
+export const API_BASE_URL = rawEnvUrl.endsWith('/api') ? rawEnvUrl : `${rawEnvUrl}/api`;
+export const BASE_URL = API_BASE_URL.replace(/\/api\/?$/, '');
+export const OAUTH2_GOOGLE_URL = `${BASE_URL}/oauth2/authorization/google`;
 
-const getHeaders = (isFormData = false) => {
-  const token = localStorage.getItem("token");
-  const headers = {};
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-  if (!isFormData) headers["Content-Type"] = "application/json";
+// Retrieve or generate persistent device identifier
+export const getDeviceId = () => {
+  let deviceId = localStorage.getItem('chat_device_id');
+  if (!deviceId) {
+    deviceId = 'dev_' + Math.random().toString(36).substring(2, 11) + Date.now().toString(36);
+    localStorage.setItem('chat_device_id', deviceId);
+  }
+  return deviceId;
+};
+
+// Token storage helpers
+export const getToken = () => {
+  return localStorage.getItem('token') || localStorage.getItem('auth_token') || null;
+};
+
+export const getAuthToken = getToken;
+
+export const setToken = (token) => {
+  if (token) {
+    localStorage.setItem('token', token);
+  } else {
+    localStorage.removeItem('token');
+    localStorage.removeItem('auth_token');
+  }
+};
+
+// Common request headers
+export const getHeaders = (isFormData = false) => {
+  const headers = {
+    'X-Device-Id': getDeviceId(),
+  };
+
+  if (!isFormData) {
+    headers['Content-Type'] = 'application/json';
+    headers['Accept'] = 'application/json';
+  }
+
+  const token = getToken();
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
   return headers;
 };
 
-const handleResponse = async (res) => {
-  if (res.status === 401 || res.status === 403) {
-    const isGuest = localStorage.getItem("isGuest") === "true";
-    if (isGuest) {
-      throw new Error("AUTH_REQUIRED: Please log in or create an account.");
-    } else {
-      // Preserve user theme before clearing auth session
-      const savedTheme = localStorage.getItem("theme");
-      localStorage.clear();
-      if (savedTheme) localStorage.setItem("theme", savedTheme);
-
-      window.location.reload();
-      throw new Error("AUTH_REQUIRED: Your session has expired.");
-    }
-  }
-
-  if (res.status === 429) {
-    const isGuest = localStorage.getItem("isGuest") === "true";
-    if (isGuest) {
-      throw new Error("GUEST_LIMIT_REACHED: Please log in to continue.");
-    } else {
-      throw new Error("LIMIT_REACHED: 429 Too Many Requests");
-    }
-  }
-
-  if (!res.ok) {
-    let errorText = await res.text().catch(() => "Unknown Error");
+// Response validation and JSON parsing
+const handleResponse = async (response) => {
+  if (!response.ok) {
+    let errorMessage = `HTTP error ${response.status}`;
     try {
-      const jsonError = JSON.parse(errorText);
-      errorText = jsonError.message || jsonError.error || errorText;
-    } catch (e) {}
-
-    errorText = errorText.replace(/^\d{3} [A-Z_]+ "/, "").replace(/"$/, "");
-    throw new Error(errorText || `HTTP Error ${res.status}`);
+      const errorData = await response.json();
+      errorMessage = errorData.message || errorData.error || JSON.stringify(errorData);
+    } catch {
+      const text = await response.text();
+      if (text) errorMessage = text;
+    }
+    throw new Error(errorMessage);
   }
-  return res;
+
+  if (response.status === 204) {
+    return {};
+  }
+
+  const contentType = response.headers.get('content-type');
+  if (contentType && contentType.includes('application/json')) {
+    return await response.json();
+  }
+  return await response.text();
 };
 
-export const checkEmailExists = async (email) => {
-  try {
-    const res = await fetch(`${BASE_URL}/auth/check-email?email=${encodeURIComponent(email)}`, {
-      method: "GET",
-    });
-    if (!res.ok) return false;
-    const data = await res.json();
-    return data.exists;
-  } catch (e) {
-    return false;
+// User authentication endpoints
+export const login = async (emailOrUsername, password) => {
+  const response = await fetch(`${API_BASE_URL}/auth/login`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify({ username: emailOrUsername, password }),
+  });
+  const data = await handleResponse(response);
+  if (data.token) {
+    setToken(data.token);
   }
+  return data;
 };
+export const loginUser = login;
+export const signIn = login;
+
+// Persistent browser-level guest session handler
+export const guestLogin = async (forceNew = false) => {
+  const cachedGuestToken = localStorage.getItem('guest_token');
+  const cachedGuestUsername = localStorage.getItem('guest_username');
+
+  // Reuse existing browser-level guest session unless forced to renew
+  if (!forceNew && cachedGuestToken) {
+    setToken(cachedGuestToken);
+    return {
+      token: cachedGuestToken,
+      username: cachedGuestUsername || 'Guest',
+      isGuest: true,
+    };
+  }
+
+  const response = await fetch(`${API_BASE_URL}/auth/guest`, {
+    method: 'POST',
+    headers: getHeaders(),
+  });
+  const data = await handleResponse(response);
+  if (data.token) {
+    setToken(data.token);
+    localStorage.setItem('guest_token', data.token);
+    localStorage.setItem('guest_username', data.username);
+  }
+  return data;
+};
+export const loginAsGuest = guestLogin;
+
+export const register = async (username, email, password) => {
+  const response = await fetch(`${API_BASE_URL}/auth/register`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify({ username, email, password }),
+  });
+  const data = await handleResponse(response);
+  if (data.token) {
+    setToken(data.token);
+  }
+  return data;
+};
+export const registerUser = register;
+export const signUp = register;
 
 export const sendOtp = async (email) => {
-  const res = await fetch(`${BASE_URL}/auth/send-otp`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
+  const response = await fetch(`${API_BASE_URL}/auth/send-otp`, {
+    method: 'POST',
+    headers: getHeaders(),
     body: JSON.stringify({ email }),
   });
-  await handleResponse(res);
-  return res.text();
+  return await handleResponse(response);
 };
 
-export const registerWithOtp = async (email, otp, username, password) => {
-  const res = await fetch(`${BASE_URL}/auth/register-with-otp`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, otp, username, password }),
-  });
-  await handleResponse(res);
-  return res.json();
-};
-
-export const loginUser = async (username, password) => {
-  const res = await fetch(`${BASE_URL}/auth/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, password }),
-  });
-  await handleResponse(res);
-  return res.json();
-};
-
-export const guestLogin = async () => {
-  const res = await fetch(`${BASE_URL}/auth/guest`, {
-    method: "POST",
-  });
-  await handleResponse(res);
-  return res.json();
-};
-
-export const setCredentials = async (username, password) => {
-  const res = await fetch(`${BASE_URL}/auth/set-credentials`, {
-    method: "POST",
+export const verifyOtpCode = async (email, otp) => {
+  const response = await fetch(`${API_BASE_URL}/auth/verify-otp`, {
+    method: 'POST',
     headers: getHeaders(),
-    body: JSON.stringify({ username, password }),
+    body: JSON.stringify({ email, otp }),
   });
-  await handleResponse(res);
-  return res.json();
+  return await handleResponse(response);
 };
 
-export const upgradeGuest = async (email, otp, username, password) => {
-  const res = await fetch(`${BASE_URL}/auth/upgrade-guest`, {
-    method: "POST",
+export const registerWithOtp = async (userData) => {
+  const response = await fetch(`${API_BASE_URL}/auth/register-with-otp`, {
+    method: 'POST',
     headers: getHeaders(),
-    body: JSON.stringify({ email, otp, username, password }),
+    body: JSON.stringify(userData),
   });
-  await handleResponse(res);
-  return res.json();
-};
-
-export const fetchSessions = async () => {
-  const res = await fetch(`${BASE_URL}/chat/sessions`, {
-    headers: getHeaders(),
-  });
-  await handleResponse(res);
-  return res.json();
-};
-
-export const createSession = async (title) => {
-  const res = await fetch(`${BASE_URL}/chat/sessions`, {
-    method: "POST",
-    headers: getHeaders(),
-    body: JSON.stringify({ title, messages: [] }),
-  });
-  await handleResponse(res);
-  const data = await res.json();
-  data.messages = data.messages || [];
+  const data = await handleResponse(response);
+  if (data.token) {
+    setToken(data.token);
+  }
   return data;
 };
 
-export const sendChatMessage = async (sessionId, message) => {
-  const res = await fetch(`${BASE_URL}/chat/${sessionId}/message`, {
-    method: "POST",
+export const checkEmailExists = async (email) => {
+  const response = await fetch(`${API_BASE_URL}/auth/check-email?email=${encodeURIComponent(email)}`, {
+    method: 'GET',
     headers: getHeaders(),
-    body: JSON.stringify({ text: message }),
   });
-  await handleResponse(res);
-  return res.json();
+  return await handleResponse(response);
 };
 
-export const streamChatMessage = async (sessionId, message, files = [], onChunk) => {
-  let body;
-  let headers;
-
-  if (files && files.length > 0) {
-    const formData = new FormData();
-    formData.append("text", message.trim() ? message : "Please analyze the attached files.");
-
-    files.forEach((file) => {
-      formData.append("files", file);
-    });
-
-    body = formData;
-    headers = getHeaders(true);
-  } else {
-    body = JSON.stringify({ text: message });
-    headers = getHeaders(false);
-  }
-
-  const res = await fetch(`${BASE_URL}/chat/${sessionId}/stream`, {
-    method: "POST",
-    headers,
-    body,
+export const sendForgotPasswordOtp = async (email) => {
+  const response = await fetch(`${API_BASE_URL}/auth/forgot-password/send-otp`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify({ email }),
   });
+  return await handleResponse(response);
+};
+export const forgotPassword = sendForgotPasswordOtp;
+export const sendPasswordResetOtp = sendForgotPasswordOtp;
 
-  await handleResponse(res);
+export const resetPasswordWithOtp = async (email, otp, newPassword) => {
+  const response = await fetch(`${API_BASE_URL}/auth/reset-password`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify({ email, otp, newPassword }),
+  });
+  return await handleResponse(response);
+};
+export const resetPassword = resetPasswordWithOtp;
+export const resetUserPassword = resetPasswordWithOtp;
 
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder("utf-8");
+// Profile management endpoints
+export const getUserProfile = async () => {
+  const response = await fetch(`${API_BASE_URL}/users/me`, {
+    method: 'GET',
+    headers: getHeaders(),
+  });
+  return await handleResponse(response);
+};
+export const getCurrentUser = getUserProfile;
+export const getProfile = getUserProfile;
+export const fetchUserProfile = getUserProfile;
+export const getUser = getUserProfile;
 
-  let buffer = "";
-  let eventData = [];
+export const updateUserProfile = async (profileData) => {
+  const response = await fetch(`${API_BASE_URL}/users/profile`, {
+    method: 'PUT',
+    headers: getHeaders(),
+    body: JSON.stringify(profileData),
+  });
+  return await handleResponse(response);
+};
+export const updateProfile = updateUserProfile;
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
+export const setCredentials = async (username, password) => {
+  const payload = typeof username === 'object' ? username : { username, password };
+  const response = await fetch(`${API_BASE_URL}/auth/set-credentials`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify(payload),
+  });
+  return await handleResponse(response);
+};
+export const setUserCredentials = setCredentials;
+export const setupCredentials = setCredentials;
 
-    buffer += decoder.decode(value, { stream: true });
-    let lines = buffer.split("\n");
-    buffer = lines.pop();
+export const changePassword = async (oldPassword, newPassword) => {
+  const response = await fetch(`${API_BASE_URL}/users/change-password`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify({ oldPassword, newPassword }),
+  });
+  return await handleResponse(response);
+};
+export const changeUserPassword = changePassword;
+export const updatePassword = changePassword;
+export const updateUserPassword = changePassword;
 
-    for (const line of lines) {
-      if (line.startsWith("data:")) {
-        eventData.push(line.substring(5));
-      } else if (line === "") {
-        if (eventData.length > 0) {
-          onChunk(eventData.join("\n"));
-          eventData = [];
+export const deleteAccount = async (password) => {
+  const response = await fetch(`${API_BASE_URL}/users/me`, {
+    method: 'DELETE',
+    headers: getHeaders(),
+    body: JSON.stringify({ password }),
+  });
+  const result = await handleResponse(response);
+  setToken(null);
+  return result;
+};
+export const deleteUserAccount = deleteAccount;
+export const deleteUser = deleteAccount;
+
+// Logout helper clearing authenticated session token
+export const logout = () => {
+  setToken(null);
+};
+export const logoutUser = logout;
+export const signOut = logout;
+
+// Session and chat history endpoints
+export const getChatSessions = async () => {
+  const response = await fetch(`${API_BASE_URL}/chat/sessions`, {
+    method: 'GET',
+    headers: getHeaders(),
+  });
+  return await handleResponse(response);
+};
+export const getSessions = getChatSessions;
+export const fetchSessions = getChatSessions;
+export const getAllSessions = getChatSessions;
+
+export const createSession = async (title = 'New chat') => {
+  const response = await fetch(`${API_BASE_URL}/chat/sessions`, {
+    method: 'POST',
+    headers: getHeaders(),
+    body: JSON.stringify({ title }),
+  });
+  return await handleResponse(response);
+};
+export const createChatSession = createSession;
+export const createNewSession = createSession;
+
+export const getSessionMessages = async (sessionId) => {
+  const response = await fetch(`${API_BASE_URL}/chat/sessions/${sessionId}/messages`, {
+    method: 'GET',
+    headers: getHeaders(),
+  });
+  return await handleResponse(response);
+};
+export const getMessages = getSessionMessages;
+export const fetchMessages = getSessionMessages;
+export const fetchSessionMessages = getSessionMessages;
+
+export const renameSession = async (sessionId, title) => {
+  const response = await fetch(`${API_BASE_URL}/chat/sessions/${sessionId}`, {
+    method: 'PATCH',
+    headers: getHeaders(),
+    body: JSON.stringify({ title }),
+  });
+  return await handleResponse(response);
+};
+export const updateSessionTitle = renameSession;
+export const renameChatSession = renameSession;
+
+export const deleteSession = async (sessionId) => {
+  const response = await fetch(`${API_BASE_URL}/chat/sessions/${sessionId}`, {
+    method: 'DELETE',
+    headers: getHeaders(),
+  });
+  return await handleResponse(response);
+};
+export const deleteChatSession = deleteSession;
+export const removeSession = deleteSession;
+
+// Streaming communication handler preserving whitespace between words
+export const streamMessage = async ({
+  sessionId,
+  message,
+  files = [],
+  onChunk,
+  onError,
+  onFinish,
+  signal,
+}) => {
+  try {
+    const hasFiles = files && files.length > 0;
+    let fetchOptions;
+
+    if (hasFiles) {
+      const formData = new FormData();
+      formData.append('text', message || '');
+      files.slice(0, 3).forEach((file) => {
+        formData.append('files', file);
+      });
+
+      fetchOptions = {
+        method: 'POST',
+        headers: {
+          'X-Device-Id': getDeviceId(),
+          ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
+          Accept: 'text/event-stream, text/plain, */*',
+        },
+        body: formData,
+        signal,
+      };
+    } else {
+      fetchOptions = {
+        method: 'POST',
+        headers: {
+          ...getHeaders(),
+          Accept: 'text/event-stream, text/plain, */*',
+        },
+        body: JSON.stringify({ text: message }),
+        signal,
+      };
+    }
+
+    const response = await fetch(`${API_BASE_URL}/chat/${sessionId}/stream`, fetchOptions);
+
+    if (response.status === 429) {
+      let errJson = null;
+      try { errJson = await response.json(); } catch {}
+      const limitMsg = errJson?.message || 'Daily quota exceeded. Please sign in or try again after 24 hours.';
+      if (onChunk) onChunk(limitMsg);
+      if (onFinish) onFinish();
+      return;
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || `Streaming failed with status ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        const cleanLine = line.replace(/\r$/, '');
+        if (!cleanLine) continue;
+
+        if (cleanLine.startsWith('data:')) {
+          const dataContent = cleanLine.slice(5);
+
+          if (dataContent.trim() === '[DONE]') {
+            if (onFinish) onFinish();
+            return;
+          }
+          if (onChunk) {
+            onChunk(dataContent);
+          }
+        } else if (!cleanLine.startsWith(':')) {
+          if (onChunk) {
+            onChunk(cleanLine + '\n');
+          }
         }
       }
+    }
+
+    if (buffer) {
+      const cleanLine = buffer.replace(/\r$/, '');
+      if (cleanLine.startsWith('data:')) {
+        const dataContent = cleanLine.slice(5);
+        if (dataContent.trim() !== '[DONE]' && onChunk) {
+          onChunk(dataContent);
+        }
+      } else if (!cleanLine.startsWith(':') && onChunk) {
+        onChunk(cleanLine);
+      }
+    }
+
+    if (onFinish) onFinish();
+  } catch (err) {
+    if (err.name === 'AbortError') {
+      if (onFinish) onFinish();
+      return;
+    }
+    if (onError) {
+      onError(err);
+    } else {
+      console.error('SSE Stream error:', err);
     }
   }
 };
 
-export const deleteAccount = async () => {
-  const res = await fetch(`${BASE_URL}/users/me`, {
-    method: "DELETE",
-    headers: getHeaders(),
-  });
+export const sendMessageStream = streamMessage;
+export const streamChatMessage = streamMessage;
+export const streamChat = streamMessage;
+export const sendChatMessage = streamMessage;
 
-  if (!res.ok) {
-    const errorText = await res.text().catch(() => "Unknown Error");
-    throw new Error(errorText || `HTTP Error ${res.status}`);
-  }
-  return true;
+const ChatApi = {
+  API_BASE_URL,
+  BASE_URL,
+  OAUTH2_GOOGLE_URL,
+  getDeviceId,
+  getToken,
+  getAuthToken,
+  setToken,
+  getHeaders,
+  login,
+  loginUser,
+  signIn,
+  guestLogin,
+  loginAsGuest,
+  register,
+  registerUser,
+  signUp,
+  sendOtp,
+  verifyOtpCode,
+  registerWithOtp,
+  checkEmailExists,
+  sendForgotPasswordOtp,
+  forgotPassword,
+  sendPasswordResetOtp,
+  resetPasswordWithOtp,
+  resetPassword,
+  resetUserPassword,
+  getUserProfile,
+  getCurrentUser,
+  getProfile,
+  fetchUserProfile,
+  getUser,
+  updateUserProfile,
+  updateProfile,
+  setCredentials,
+  setUserCredentials,
+  setupCredentials,
+  changePassword,
+  changeUserPassword,
+  updatePassword,
+  updateUserPassword,
+  deleteAccount,
+  deleteUserAccount,
+  deleteUser,
+  logout,
+  logoutUser,
+  signOut,
+  getChatSessions,
+  getSessions,
+  fetchSessions,
+  getAllSessions,
+  createSession,
+  createChatSession,
+  createNewSession,
+  getSessionMessages,
+  getMessages,
+  fetchMessages,
+  fetchSessionMessages,
+  renameSession,
+  updateSessionTitle,
+  renameChatSession,
+  deleteSession,
+  deleteChatSession,
+  removeSession,
+  streamMessage,
+  sendMessageStream,
+  streamChatMessage,
+  streamChat,
+  sendChatMessage,
 };
+
+export default ChatApi;

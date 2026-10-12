@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy & Policy - ChatBot | Rajnish Systems</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <style>
+    :root {
+      --bg: #0B0F19;
+      --card-bg: #151C2C;
+      --border: #1E293B;
+      --text-main: #F1F5F9;
+      --text-muted: #94A3B8;
+      --accent: #3B82F6;
+      --accent-hover: #2563EB;
+      --badge-bg: rgba(59, 130, 246, 0.1);
+      --badge-text: #60A5FA;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text-main);
+      line-height: 1.65;
+      padding: 30px 16px 20px;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+      background-color: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 36px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      flex: 1;
+    }
+
+    /* Brand Header */
+    .brand-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 24px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .brand-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand-logo {
+      width: 40px;
+      height: 40px;
+      background-color: #3b66ff;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 12px rgba(59, 102, 255, 0.35);
+    }
+
+    .brand-title {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+
+    .brand-title span {
+      color: var(--accent);
+    }
+
+    .project-badge {
+      font-size: 11.5px;
+      font-weight: 600;
+      padding: 5px 12px;
+      border-radius: 20px;
+      background-color: var(--badge-bg);
+      color: var(--badge-text);
+      border: 1px solid rgba(59, 130, 246, 0.25);
+      letter-spacing: 0.2px;
+    }
+
+    /* Tab Switcher */
+    .tab-nav {
+      display: flex;
+      gap: 8px;
+      background-color: #0E1420;
+      padding: 5px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      margin-bottom: 28px;
+    }
+
+    .tab-btn {
+      flex: 1;
+      padding: 10px 16px;
+      font-size: 13.5px;
+      font-weight: 600;
+      border: none;
+      border-radius: 10px;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-align: center;
+    }
+
+    .tab-btn.active {
+      background-color: var(--accent);
+      color: #FFFFFF;
+      box-shadow: 0 2px 8px rgba(59, 130, 246, 0.35);
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+      animation: fadeIn 0.25s ease-in-out;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Content Typography */
+    h1 {
+      font-size: 24px;
+      font-weight: 800;
+      margin-bottom: 6px;
+      color: #FFFFFF;
+    }
+
+    .meta-date {
+      font-size: 12.5px;
+      color: var(--text-muted);
+      margin-bottom: 22px;
+    }
+
+    h2 {
+      font-size: 17px;
+      font-weight: 700;
+      margin-top: 24px;
+      margin-bottom: 10px;
+      color: #E2E8F0;
+      border-left: 3px solid var(--accent);
+      padding-left: 10px;
+    }
+
+    p {
+      font-size: 14px;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+
+    ul {
+      margin-left: 20px;
+      margin-bottom: 14px;
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+
+    li {
+      margin-bottom: 6px;
+    }
+
+    strong {
+      color: #F8FAFC;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: underline;
+    }
+
+    a:hover {
+      color: #60A5FA;
+    }
+
+    .callout-box {
+      background-color: #0E1420;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px;
+      margin-top: 14px;
+      margin-bottom: 14px;
+    }
+
+    /* Footer */
+    footer {
+      text-align: center;
+      margin-top: 28px;
+      padding: 16px 0;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    footer a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-weight: 600;
+    }
+
+    footer a:hover {
+      color: var(--accent);
+    }
+
+    @media (max-width: 640px) {
+      .container {
+        padding: 22px 16px;
+      }
+      .brand-header {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    
+    <!-- Top Brand Header -->
+    <div class="brand-header">
+      <div class="brand-left">
+        <div class="brand-logo">
+          <!-- Robot Icon -->
+          <svg viewBox="0 0 100 100" width="28" height="28" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M42 35 L50 35 L50 42" stroke="white" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+            <rect x="34" y="42" width="32" height="25" rx="7" stroke="white" stroke-width="6"/>
+            <line x1="28" y1="54.5" x2="34" y2="54.5" stroke="white" stroke-width="6" stroke-linecap="round"/>
+            <line x1="66" y1="54.5" x2="72" y2="54.5" stroke="white" stroke-width="6" stroke-linecap="round"/>
+            <line x1="44" y1="50.5" x2="44" y2="58.5" stroke="white" stroke-width="5.5" stroke-linecap="round"/>
+            <line x1="56" y1="50.5" x2="56" y2="58.5" stroke="white" stroke-width="5.5" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="brand-title">Chat<span>Bot</span></div>
+      </div>
+      <div class="project-badge">Educational & Research Project</div>
+    </div>
+
+    <!-- Tab Selector -->
+    <div class="tab-nav">
+      <button class="tab-btn active" onclick="switchTab('privacy')">1. Data Privacy</button>
+      <button class="tab-btn" onclick="switchTab('policy')">2. Usage Policy & Scope</button>
+    </div>
+
+    <!-- ==================== TAB 1: PRIVACY ==================== -->
+    <div id="privacy-tab" class="tab-content active">
+      <h1>Data Privacy</h1>
+      <div class="meta-date">Last Updated: October 2026 | Operator: Rajnish Systems (<a href="https://rajnishsystems.in" target="_blank">rajnishsystems.in</a>)</div>
+
+      <h2>1. Privacy Commitment</h2>
+      <p>
+        At <strong>ChatBot</strong>, we believe user privacy is fundamental. This section outlines how we collect, store, and safeguard your personal details while you interact with our AI conversational services.
+      </p>
+
+      <h2>2. What Personal Data We Collect</h2>
+      <ul>
+        <li><strong>Account Identifiers:</strong> Verified email address, username, and encrypted passwords. Passwords are never saved in plaintext; they are irreversibly hashed using BCrypt.</li>
+        <li><strong>OAuth2 Single Sign-On:</strong> When signing in with Google, we receive only your email and public profile ID to authenticate your session.</li>
+        <li><strong>User Conversations:</strong> Text queries, chat history, and uploaded files (PDFs, text files, and images) submitted for AI analysis.</li>
+        <li><strong>Token & Usage Metrics:</strong> Daily API interaction counts and token usage to maintain rate limits (10 calls/day for guests, 50 calls/day for registered users).</li>
+      </ul>
+
+      <h2>3. How Your Data Is Protected</h2>
+      <p>
+        Your data is stored in a private, encrypted PostgreSQL database with vector embeddings managed by PGVector. We apply strict security principles:
+      </p>
+      <ul>
+        <li>Stateless JSON Web Tokens (JWT) for secure session authorization.</li>
+        <li>One-way salted cryptographic hashing (BCrypt) for passwords.</li>
+        <li>Encrypted TLS/HTTPS transport for all API traffic.</li>
+        <li><strong>We do not sell, rent, or monetize your personal information to third parties.</strong></li>
+      </ul>
+
+      <h2>4. User Rights & Account Deletion</h2>
+      <p>
+        You have complete control over your data. At any time, you can visit <strong>Profile & Security</strong> to update your credentials or click <strong>Delete Account</strong>. 
+      </p>
+      <p>
+        Deleting your account immediately and irreversibly wipes your profile, session history, and all chat records from our database.
+      </p>
+    </div>
+
+    <!-- ==================== TAB 2: USAGE POLICY ==================== -->
+    <div id="policy-tab" class="tab-content">
+      <h1>Usage Policy & Project Scope</h1>
+      <div class="meta-date">Last Updated: October 2026 | Project Type: Learning & Portfolio Architecture</div>
+
+      <div class="callout-box">
+        <p><strong>Educational & Portfolio Purpose:</strong></p>
+        <p style="margin-bottom: 0;">
+          <strong>ChatBot</strong> is designed, engineered, and maintained as a modern full-stack AI learning project by <strong>Rajnish Chauhan</strong> (<a href="https://rajnishsystems.in" target="_blank">Rajnish Systems</a>). It serves as a practical implementation of Spring AI, RAG (Retrieval-Augmented Generation), vector databases, and real-time streaming architectures.
+        </p>
+      </div>
+
+      <h2>1. Acceptable Use Policy</h2>
+      <p>When using this educational platform, users agree to:</p>
+      <ul>
+        <li>Use the system respectfully for testing, experimentation, and research questions.</li>
+        <li>Refrain from attempting prompt injections, abusive language, or automated DDoS requests against the backend APIs.</li>
+        <li>Respect system quotas: Guest accounts are capped at 10 daily queries, and registered accounts are allocated 50 daily queries (resetting intervally every 24 hours).</li>
+      </ul>
+
+      <h2>2. AI Output & Accuracy Disclaimer</h2>
+      <p>
+        ChatBot utilizes large language models and semantic document retrieval. While designed to provide high-quality, contextual answers:
+      </p>
+      <ul>
+        <li>AI responses are generated automatically and should be verified for factual or technical accuracy.</li>
+        <li>The assistant does not provide certified medical diagnoses, legally binding advice, or professional financial guidance.</li>
+        <li>The service is provided on an educational "as-is" basis without commercial service-level guarantees.</li>
+      </ul>
+
+      <h2>3. Intellectual Property</h2>
+      <p>
+        All underlying software architecture, system integrations, and application designs are authored by <strong>Rajnish Systems</strong>. You retain full copyright over the creative prompts and original documents you submit to the platform.
+      </p>
+
+      <h2>4. Contact & Support Inquiries</h2>
+      <p>
+        For inquiries, questions regarding the project implementation, or support requests, please contact:
+      </p>
+      <div class="callout-box">
+        <p><strong>Developer & Entity:</strong> Rajnish Systems</p>
+        <p><strong>Support Email:</strong> <a href="mailto:rajnishsystems@gmail.com">rajnishsystems@gmail.com</a></p>
+        <p style="margin-bottom: 0;"><strong>Official Website:</strong> <a href="https://rajnishsystems.in" target="_blank">https://rajnishsystems.in</a></p>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Application Bottom Footer -->
+  <footer>
+    &copy; 2026 <a href="https://rajnishsystems.in" target="_blank">rajnishsystems.in</a>. All rights reserved.
+  </footer>
+
+  <script>
+    function switchTab(tab) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+      if (tab === 'privacy') {
+        document.querySelectorAll('.tab-btn')[0].classList.add('active');
+        document.getElementById('privacy-tab').classList.add('active');
+      } else {
+        document.querySelectorAll('.tab-btn')[1].classList.add('active');
+        document.getElementById('policy-tab').classList.add('active');
+      }
+    }
+  </script>
+
+</body>
+</html>

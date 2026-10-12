@@ -1,139 +1,188 @@
-import React, { useState, useRef, useEffect } from "react";
+import React from "react";
+import {
+  MessageSquare,
+  SquarePen,
+  Trash2,
+  Settings,
+  LogIn,
+  PanelLeft,
+  Bot,
+} from "lucide-react";
 
-export default function Sidebar({ 
-  sessions, 
-  currentSessionId, 
-  onNewChat, 
-  onSelectSession, 
-  onLogout, 
-  onDeleteAccount,
-  username, 
-  isGuest 
+export default function Sidebar({
+  sessions = [],
+  activeSessionId,
+  onSelectSession,
+  onNewChat,
+  onDeleteSession,
+  user,
+  onOpenSettings,
+  onOpenProfile,
+  onOpenLogin,
+  isOpen = true,
+  onToggle,
 }) {
-  const [showProfileMenu, setShowProfileMenu] = useState(false);
-  const menuRef = useRef(null);
+  // Determine if the current session belongs to a guest user
+  const isGuest = Boolean(
+    !user || 
+    user.isGuest === true || 
+    user.guest === true || 
+    (typeof user?.username === "string" && user.username.toLowerCase().startsWith("guest_"))
+  );
 
-  useEffect(() => {
-    function handleClickOutside(event) {
-      if (menuRef.current && !menuRef.current.contains(event.target)) {
-        setShowProfileMenu(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  // Sort sessions to show the newest chats at the top
-  const displaySessions = [...sessions].sort((a, b) => b.id - a.id);
+  const displayName = user?.username || "User";
+  const userInitial = displayName.charAt(0).toUpperCase();
 
   return (
-    <div className="w-64 h-full bg-slate-50 dark:bg-[#1a1a1a] border-r border-slate-200 dark:border-slate-800 flex flex-col transition-colors z-20 relative">
-      
-      {/* New Chat Button */}
+    <aside
+      className={`h-screen flex flex-col border-r transition-all duration-300 select-none ${
+        isOpen ? "w-64" : "w-0 overflow-hidden border-r-0"
+      } bg-slate-50 border-slate-200 text-slate-700 dark:bg-[#0d0f12] dark:border-slate-800/80 dark:text-slate-300`}
+    >
+      {/* Brand Header with internal collapse toggle */}
+      <div className="p-4 flex items-center justify-between border-b border-slate-200 dark:border-slate-800/50">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-xs">
+            <Bot size={20} />
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="font-semibold text-slate-900 dark:text-white tracking-tight text-base">
+              ChatBot
+            </span>
+            <span className="px-1.5 py-0.5 text-[10px] font-bold bg-blue-500/10 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400 rounded-md border border-blue-500/20 dark:border-blue-500/30">
+              AI
+            </span>
+          </div>
+        </div>
+
+        {onToggle && (
+          <button
+            type="button"
+            onClick={onToggle}
+            className="p-1.5 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white rounded-lg hover:bg-slate-200/60 dark:hover:bg-slate-800/60 transition-colors"
+            title="Toggle Sidebar"
+          >
+            <PanelLeft size={18} />
+          </button>
+        )}
+      </div>
+
+      {/* New Conversation Button */}
       <div className="p-3">
         <button
+          type="button"
           onClick={onNewChat}
-          className="w-full flex items-center gap-3 px-3 py-2.5 text-slate-700 dark:text-slate-200 bg-white dark:bg-[#1e1e1e] border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-[#2d2d2d] rounded-full transition-colors font-medium text-sm shadow-sm"
+          className="w-full flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 text-slate-800 dark:border-slate-700/60 dark:bg-slate-800/40 dark:hover:bg-slate-800 dark:text-white text-sm font-medium transition-all shadow-xs active:scale-[0.98]"
         >
-          <svg 
-            xmlns="http://www.w3.org/2000/svg" 
-            fill="none" 
-            viewBox="0 0 24 24" 
-            strokeWidth={1.5} 
-            stroke="currentColor" 
-            className="w-5 h-5 text-slate-500 dark:text-slate-400"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-          </svg>
-          New chat
+          <SquarePen size={16} className="text-slate-500 dark:text-slate-300" />
+          <span>New chat</span>
         </button>
       </div>
 
-      {/* Sessions List - Gemini Style */}
-      <div className="flex-1 overflow-y-auto px-2 py-2 space-y-0.5">
-        <div className="text-[13px] font-medium text-slate-500 dark:text-[#a1a1aa] mb-2 px-3 pt-2">
-          Recent
+      {/* Chat History List */}
+      <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1 custom-scrollbar">
+        <div className="px-2 py-1.5 text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
+          Recent chats
         </div>
-        {displaySessions.map((session) => (
-          <button
-            key={session.id}
-            onClick={() => onSelectSession(session.id)}
-            className={`w-full text-left px-4 py-2.5 rounded-full text-[14px] truncate transition-colors ${
-              currentSessionId === session.id
-                ? "bg-slate-200 dark:bg-[#282a2c] text-slate-900 dark:text-white font-semibold"
-                : "bg-transparent text-slate-700 dark:text-[#e4e4e7] hover:bg-slate-100 dark:hover:bg-[#2d2f31]"
-            }`}
-          >
-            {session.title || "New Chat"}
-          </button>
-        ))}
+
+        {sessions && sessions.length > 0 ? (
+          sessions.map((s) => {
+            const isActive = s.id === activeSessionId;
+            return (
+              <div
+                key={s.id}
+                onClick={() => onSelectSession(s.id)}
+                className={`group flex items-center justify-between px-3 py-2 rounded-xl text-sm cursor-pointer transition-all ${
+                  isActive
+                    ? "bg-slate-200 text-slate-900 font-medium dark:bg-slate-800 dark:text-white shadow-xs"
+                    : "text-slate-600 hover:bg-slate-200/60 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/50 dark:hover:text-slate-200"
+                }`}
+              >
+                <div className="flex items-center gap-2.5 min-w-0 flex-1 mr-2">
+                  <MessageSquare
+                    size={16}
+                    className={`shrink-0 ${
+                      isActive ? "text-blue-500 dark:text-blue-400" : "text-slate-400 dark:text-slate-500"
+                    }`}
+                  />
+                  <span className="truncate">{s.title || "New Chat"}</span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeleteSession(s.id);
+                  }}
+                  className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-500 rounded-md hover:bg-slate-300/50 dark:hover:bg-slate-700/50 transition-all shrink-0"
+                  title="Delete chat"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            );
+          })
+        ) : (
+          <div className="px-3 py-6 text-center text-xs text-slate-400 dark:text-slate-500">
+            No chat history yet.
+          </div>
+        )}
       </div>
 
-      {/* User Profile Bar */}
-      <div className="p-3 border-t border-slate-200 dark:border-slate-800 relative" ref={menuRef}>
-        
-        {showProfileMenu && (
-          <div className="absolute bottom-full left-3 w-[calc(100%-24px)] mb-2 bg-white dark:bg-[#252525] border border-slate-200 dark:border-slate-700 rounded-2xl shadow-lg overflow-hidden animate-fade-in-up">
-            <div className="p-4 border-b border-slate-100 dark:border-slate-800">
-              <p className="text-sm font-medium text-slate-800 dark:text-slate-100 truncate">
-                {isGuest ? "Guest" : username}
-              </p>
-              <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                {isGuest ? "Guest Account" : "Registered User"}
-              </p>
+      {/* Bottom Profile / Register Gateway */}
+      <div className="p-3 border-t border-slate-200 dark:border-slate-800/80 bg-slate-50 dark:bg-[#0d0f12]">
+        {isGuest ? (
+          // Register button rendered exclusively for guest users
+          <button
+            type="button"
+            onClick={onOpenLogin}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium text-sm transition-all duration-200 shadow-xs active:scale-[0.98]"
+            title="Register to save chat history"
+          >
+            <LogIn size={16} className="shrink-0" />
+            <span>Register</span>
+          </button>
+        ) : (
+          // Authenticated profile card rendered at the bottom left for registered accounts
+          <div className="flex items-center justify-between p-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 dark:bg-slate-800/40 dark:border-slate-700/50 dark:hover:bg-slate-800/70 transition-colors">
+            <div 
+              className="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer" 
+              onClick={onOpenProfile}
+            >
+              <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-semibold text-xs shrink-0 shadow-xs">
+                {userInitial}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-slate-900 dark:text-slate-200 truncate">
+                  {displayName}
+                </p>
+                <p className="text-[11px] text-slate-400">Settings</p>
+              </div>
             </div>
-            
-            <div className="p-1.5 space-y-0.5">
-              {isGuest ? (
-                <button
-                  onClick={() => {
-                    setShowProfileMenu(false);
-                    onLogout();
-                  }}
-                  className="w-full text-left px-3 py-2.5 text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-[#333] rounded-xl transition-colors"
-                >
-                  Login / Create Account
-                </button>
-              ) : (
-                <>
-                  <button
-                    onClick={() => {
-                      setShowProfileMenu(false);
-                      onLogout();
-                    }}
-                    className="w-full text-left px-3 py-2.5 text-sm text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#333] rounded-xl transition-colors"
-                  >
-                    Log out
-                  </button>
-                  <button
-                    onClick={() => {
-                      setShowProfileMenu(false);
-                      onDeleteAccount();
-                    }}
-                    className="w-full text-left px-3 py-2.5 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-colors"
-                  >
-                    Delete Account
-                  </button>
-                </>
-              )}
-            </div>
+
+            <button
+              type="button"
+              onClick={onOpenSettings || onOpenProfile}
+              className="p-1.5 text-slate-400 hover:text-slate-800 dark:hover:text-white rounded-lg hover:bg-slate-200/50 dark:hover:bg-slate-700/50 transition-colors shrink-0"
+              title="Settings"
+            >
+              <Settings size={18} />
+            </button>
           </div>
         )}
 
-        <button
-          onClick={() => setShowProfileMenu(!showProfileMenu)}
-          className="w-full flex items-center gap-3 px-3 py-2 rounded-full hover:bg-slate-200 dark:hover:bg-[#2d2d2d] transition-colors"
-        >
-          <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm font-bold shrink-0">
-            {isGuest ? "G" : username?.charAt(0)?.toUpperCase() || "U"}
-          </div>
-          <div className="flex-1 text-left truncate">
-            <p className="text-sm font-medium text-slate-800 dark:text-slate-200 truncate">
-              {isGuest ? "Guest" : username}
-            </p>
-          </div>
-        </button>
+        {/* Legal Link */}
+        <div className="mt-3 text-center">
+          <a
+            href="/privacy-policy.html"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-slate-400 hover:text-slate-600 dark:text-slate-500 dark:hover:text-slate-400 transition-colors"
+          >
+            Privacy and Policy
+          </a>
+        </div>
       </div>
-    </div>
+    </aside>
   );
 }

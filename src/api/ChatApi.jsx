@@ -3,7 +3,7 @@ export const API_BASE_URL = rawEnvUrl.endsWith('/api') ? rawEnvUrl : `${rawEnvUr
 export const BASE_URL = API_BASE_URL.replace(/\/api\/?$/, '');
 export const OAUTH2_GOOGLE_URL = `${BASE_URL}/oauth2/authorization/google`;
 
-// Retrieve or generate persistent device identifier
+// Get or generate a persistent device identifier
 export const getDeviceId = () => {
   let deviceId = localStorage.getItem('chat_device_id');
   if (!deviceId) {
@@ -48,7 +48,7 @@ export const getHeaders = (isFormData = false) => {
   return headers;
 };
 
-// Response validation and JSON parsing
+// Validate response and parse JSON or text body
 const handleResponse = async (response) => {
   if (!response.ok) {
     let errorMessage = `HTTP error ${response.status}`;
@@ -73,7 +73,7 @@ const handleResponse = async (response) => {
   return await response.text();
 };
 
-// User authentication endpoints
+// Authentication endpoints
 export const login = async (emailOrUsername, password) => {
   const response = await fetch(`${API_BASE_URL}/auth/login`, {
     method: 'POST',
@@ -89,12 +89,11 @@ export const login = async (emailOrUsername, password) => {
 export const loginUser = login;
 export const signIn = login;
 
-// Persistent browser-level guest session handler
+// Handle guest session creation and reuse
 export const guestLogin = async (forceNew = false) => {
   const cachedGuestToken = localStorage.getItem('guest_token');
   const cachedGuestUsername = localStorage.getItem('guest_username');
 
-  // Reuse existing browser-level guest session unless forced to renew
   if (!forceNew && cachedGuestToken) {
     setToken(cachedGuestToken);
     return {
@@ -254,7 +253,7 @@ export const deleteAccount = async (password) => {
 export const deleteUserAccount = deleteAccount;
 export const deleteUser = deleteAccount;
 
-// Logout helper clearing authenticated session token
+// Clear auth state on logout
 export const logout = () => {
   setToken(null);
 };
@@ -316,7 +315,7 @@ export const deleteSession = async (sessionId) => {
 export const deleteChatSession = deleteSession;
 export const removeSession = deleteSession;
 
-// Streaming communication handler preserving whitespace between words
+// Stream chat response preserving newlines, whitespace, and markdown blocks
 export const streamMessage = async ({
   sessionId,
   message,
@@ -384,40 +383,49 @@ export const streamMessage = async ({
       if (done) break;
 
       buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
 
-      for (const line of lines) {
-        const cleanLine = line.replace(/\r$/, '');
-        if (!cleanLine) continue;
+      // SSE events are separated by double newlines (\n\n)
+      const events = buffer.replace(/\r\n/g, '\n').split('\n\n');
+      buffer = events.pop() || '';
 
-        if (cleanLine.startsWith('data:')) {
-          const dataContent = cleanLine.slice(5);
+      for (const event of events) {
+        if (!event) continue;
+        const lines = event.split('\n');
+        const dataLines = [];
 
-          if (dataContent.trim() === '[DONE]') {
-            if (onFinish) onFinish();
-            return;
+        for (const line of lines) {
+          if (line.startsWith('data:')) {
+            const dataContent = line.slice(5);
+
+            if (dataContent.trim() === '[DONE]') {
+              if (onFinish) onFinish();
+              return;
+            }
+            dataLines.push(dataContent);
           }
-          if (onChunk) {
-            onChunk(dataContent);
-          }
-        } else if (!cleanLine.startsWith(':')) {
-          if (onChunk) {
-            onChunk(cleanLine + '\n');
-          }
+        }
+
+        // Rejoin multiline payload with original newlines per SSE specification
+        if (dataLines.length > 0 && onChunk) {
+          onChunk(dataLines.join('\n'));
         }
       }
     }
 
-    if (buffer) {
-      const cleanLine = buffer.replace(/\r$/, '');
-      if (cleanLine.startsWith('data:')) {
-        const dataContent = cleanLine.slice(5);
-        if (dataContent.trim() !== '[DONE]' && onChunk) {
-          onChunk(dataContent);
+    // Process any remaining event left in the buffer
+    if (buffer.trim()) {
+      const lines = buffer.replace(/\r\n/g, '\n').split('\n');
+      const dataLines = [];
+      for (const line of lines) {
+        if (line.startsWith('data:')) {
+          const dataContent = line.slice(5);
+          if (dataContent.trim() !== '[DONE]') {
+            dataLines.push(dataContent);
+          }
         }
-      } else if (!cleanLine.startsWith(':') && onChunk) {
-        onChunk(cleanLine);
+      }
+      if (dataLines.length > 0 && onChunk) {
+        onChunk(dataLines.join('\n'));
       }
     }
 

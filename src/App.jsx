@@ -48,7 +48,7 @@ const App = () => {
     isStreamingRef.current = isStreaming;
   }, [isStreaming]);
 
-  // Viewport tracking for mobile view
+  // Handle responsive layout
   useEffect(() => {
     const handleResize = () => {
       const mobile = window.innerWidth < 768;
@@ -65,13 +65,12 @@ const App = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Authentication initialization: Preserves active session across page reloads
+  // Initialize authentication and user session
   useEffect(() => {
     const initAuth = async () => {
       const urlParams = new URLSearchParams(window.location.search);
       const urlToken = urlParams.get('token');
 
-      // Capture OAuth2 redirection token from URL
       if (urlToken) {
         setToken(urlToken);
         window.history.replaceState({}, document.title, window.location.pathname);
@@ -79,7 +78,6 @@ const App = () => {
 
       let token = getToken();
 
-      // Case 1: First-time visitor with no token stored
       if (!token) {
         try {
           const guestData = await loginAsGuest();
@@ -90,7 +88,6 @@ const App = () => {
         setLoginInitialMode('welcome');
         setIsLoginOpen(true);
       } else {
-        // Case 2: Existing token present; fetch authenticated profile
         try {
           const profile = await getUserProfile();
           setUser(profile);
@@ -119,7 +116,7 @@ const App = () => {
     initAuth();
   }, []);
 
-  // Load existing chat sessions
+  // Fetch session history for current user
   const loadSessions = async () => {
     try {
       const data = await getChatSessions();
@@ -138,7 +135,17 @@ const App = () => {
     }
   }, [user]);
 
-  // Load messages for active session with race condition guards
+  // Reload current user profile to update avatar across the UI
+  const handleProfileUpdated = async () => {
+    try {
+      const updatedProfile = await getUserProfile();
+      setUser(updatedProfile);
+    } catch (err) {
+      console.error('Failed to reload user profile:', err);
+    }
+  };
+
+  // Load chat messages when activeSessionId changes
   useEffect(() => {
     const loadMessages = async () => {
       if (!activeSessionId) {
@@ -146,7 +153,6 @@ const App = () => {
         return;
       }
 
-      // Avoid overwriting messages if this session was just created during dispatch
       if (isStreamingRef.current || newCreatedSessionIdRef.current === activeSessionId) {
         newCreatedSessionIdRef.current = null;
         return;
@@ -172,13 +178,12 @@ const App = () => {
     loadMessages();
   }, [activeSessionId]);
 
-  // Immediately create and activate a new conversation session
+  // Create a new chat session
   const handleNewChat = async () => {
     if (isStreaming) {
       handleStopGeneration();
     }
 
-    // Avoid creating duplicate empty sessions if current chat is already new and empty
     if (messages.length === 0 && activeSessionId) {
       const currentSession = sessions.find((s) => s.id === activeSessionId);
       if (currentSession && (currentSession.title === 'New chat' || currentSession.title === 'New Chat')) {
@@ -248,7 +253,7 @@ const App = () => {
     isStreamingRef.current = false;
   };
 
-  // Dispatch prompt and handle response streaming
+  // Send message and stream reply
   const handleSendMessage = async (text, files = []) => {
     if ((!text.trim() && files.length === 0) || isStreaming) return;
 
@@ -289,7 +294,6 @@ const App = () => {
         return;
       }
     } else {
-      // Update session title in sidebar immediately upon first message
       const currentSession = sessions.find((s) => s.id === currentSessionId);
       if (currentSession && (currentSession.title === 'New chat' || currentSession.title === 'New Chat')) {
         const newTitle = text.trim().slice(0, 25) || 'New chat';
@@ -379,7 +383,6 @@ const App = () => {
     });
   };
 
-  // Instant switch on login or register: clears previous chat immediately and loads new user data
   const handleLoginSuccess = async (userData) => {
     setActiveSessionId(null);
     setMessages([]);
@@ -435,7 +438,6 @@ const App = () => {
     }
   };
 
-  // Clear authenticated session and trigger mandatory login modal on logout
   const handleLogout = async () => {
     logout();
     setUser(null);
@@ -473,7 +475,6 @@ const App = () => {
     setIsLoginOpen(true);
   };
 
-  // Clear session on account deletion and trigger mandatory login modal
   const handleAccountDeleted = async () => {
     logout();
     setUser(null);
@@ -496,7 +497,6 @@ const App = () => {
     setIsLoginOpen(true);
   };
 
-  // Check if current session is guest
   const isGuest = Boolean(!user || user.isGuest === true || user.guest === true);
 
   return (
@@ -508,7 +508,7 @@ const App = () => {
         />
       )}
 
-      {/* Left Sidebar containing the profile card and settings */}
+      {/* Sidebar container */}
       <div className={`${isMobile ? 'fixed inset-y-0 left-0 z-40' : 'relative'}`}>
         <Sidebar
           isOpen={isSidebarOpen}
@@ -534,7 +534,6 @@ const App = () => {
       <div className="flex-1 flex flex-col h-full min-w-0 relative">
         <header className="h-14 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between px-4 z-10 bg-white/80 dark:bg-[#121212]/80 backdrop-blur-sm shrink-0">
           <div className="flex items-center gap-2">
-            {/* Single clean sidebar toggle button on mobile and desktop */}
             {(!isSidebarOpen || isMobile) && (
               <button
                 type="button"
@@ -550,7 +549,7 @@ const App = () => {
           <div className="flex items-center gap-3">
             <ThemeToggle />
 
-            {/* Mobile-only action buttons */}
+            {/* Mobile header profile button */}
             {isMobile && isGuest && (
               <button
                 type="button"
@@ -569,9 +568,17 @@ const App = () => {
               <button
                 type="button"
                 onClick={() => setIsProfileOpen(true)}
-                className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-xs shadow-xs"
+                className="w-8 h-8 rounded-full bg-blue-600 overflow-hidden text-white flex items-center justify-center font-bold text-xs shadow-xs"
               >
-                {user?.username?.[0]?.toUpperCase() || <User className="w-4 h-4" />}
+                {user?.profilePic ? (
+                  <img
+                    src={user.profilePic}
+                    alt="Profile"
+                    className="w-full h-full object-cover rounded-full"
+                  />
+                ) : (
+                  user?.username?.[0]?.toUpperCase() || <User className="w-4 h-4" />
+                )}
               </button>
             )}
           </div>
@@ -611,6 +618,7 @@ const App = () => {
           isOpen={isProfileOpen}
           onClose={() => setIsProfileOpen(false)}
           currentUser={user}
+          onProfileUpdated={handleProfileUpdated}
           onOpenLogoutConfirm={() => {
             setIsProfileOpen(false);
             setIsLogoutConfirmOpen(true);

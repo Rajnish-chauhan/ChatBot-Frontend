@@ -1,20 +1,36 @@
-// Resolve API URL based on environment or current domain
-const getApiUrl = () => {
-  if (import.meta.env?.VITE_API_URL) {
-    return import.meta.env.VITE_API_URL;
+/**
+ * API Client & Authentication Service
+ * Handles HTTP requests, Server-Sent Events (SSE) streaming,
+ * OAuth2 redirects, and session state management.
+ */
+
+// Determine base API URL with production-aware fallback
+const resolveApiBaseUrl = () => {
+  // 1. Prioritize environment variable if defined at build time
+  const envUrl = import.meta.env?.VITE_API_URL;
+  if (envUrl && typeof envUrl === 'string' && envUrl.trim() !== '') {
+    return envUrl.trim();
   }
+
+  // 2. Runtime fallback: If running on production domain, use live API endpoint
   if (typeof window !== 'undefined' && window.location.hostname.includes('rajnishsystems.in')) {
     return 'https://api.rajnishsystems.in/api';
   }
+
+  // 3. Local development fallback
   return 'http://localhost:8080/api';
 };
 
-const rawEnvUrl = getApiUrl();
+// Normalize base URLs and remove duplicate trailing slashes
+const rawEnvUrl = resolveApiBaseUrl().replace(/\/+$/, '');
 export const API_BASE_URL = rawEnvUrl.endsWith('/api') ? rawEnvUrl : `${rawEnvUrl}/api`;
 export const BASE_URL = API_BASE_URL.replace(/\/api\/?$/, '');
 export const OAUTH2_GOOGLE_URL = `${BASE_URL}/oauth2/authorization/google`;
 
-// Get or generate a persistent device identifier
+/**
+ * Retrieve or generate a persistent unique device identifier for telemetry and rate-limiting.
+ * @returns {string} The device ID
+ */
 export const getDeviceId = () => {
   let deviceId = localStorage.getItem('chat_device_id');
   if (!deviceId) {
@@ -24,7 +40,9 @@ export const getDeviceId = () => {
   return deviceId;
 };
 
-// Token storage helpers
+/**
+ * Token management helpers
+ */
 export const getToken = () => {
   return localStorage.getItem('token') || localStorage.getItem('auth_token') || null;
 };
@@ -40,7 +58,11 @@ export const setToken = (token) => {
   }
 };
 
-// Common request headers
+/**
+ * Construct default request headers including authentication and device identification.
+ * @param {boolean} isFormData - Set true if payload is FormData to omit Content-Type header
+ * @returns {Record<string, string>}
+ */
 export const getHeaders = (isFormData = false) => {
   const headers = {
     'X-Device-Id': getDeviceId(),
@@ -59,7 +81,11 @@ export const getHeaders = (isFormData = false) => {
   return headers;
 };
 
-// Validate response and parse JSON or text body
+/**
+ * Handle HTTP response validation and extract JSON or plain text body.
+ * @param {Response} response
+ * @returns {Promise<any>}
+ */
 const handleResponse = async (response) => {
   if (!response.ok) {
     let errorMessage = `HTTP error ${response.status}`;
@@ -84,7 +110,10 @@ const handleResponse = async (response) => {
   return await response.text();
 };
 
-// Authentication endpoints
+/* ==========================================================================
+   Authentication Endpoints
+   ========================================================================== */
+
 export const login = async (emailOrUsername, password) => {
   const response = await fetch(`${API_BASE_URL}/auth/login`, {
     method: 'POST',
@@ -100,7 +129,6 @@ export const login = async (emailOrUsername, password) => {
 export const loginUser = login;
 export const signIn = login;
 
-// Handle guest session creation and reuse
 export const guestLogin = async (forceNew = false) => {
   const cachedGuestToken = localStorage.getItem('guest_token');
   const cachedGuestUsername = localStorage.getItem('guest_username');
@@ -204,7 +232,10 @@ export const resetPasswordWithOtp = async (email, otp, newPassword) => {
 export const resetPassword = resetPasswordWithOtp;
 export const resetUserPassword = resetPasswordWithOtp;
 
-// Profile management endpoints
+/* ==========================================================================
+   User Profile Endpoints
+   ========================================================================== */
+
 export const getUserProfile = async () => {
   const response = await fetch(`${API_BASE_URL}/users/me`, {
     method: 'GET',
@@ -264,14 +295,16 @@ export const deleteAccount = async (password) => {
 export const deleteUserAccount = deleteAccount;
 export const deleteUser = deleteAccount;
 
-// Clear auth state on logout
 export const logout = () => {
   setToken(null);
 };
 export const logoutUser = logout;
 export const signOut = logout;
 
-// Session and chat history endpoints
+/* ==========================================================================
+   Session & Chat History Endpoints
+   ========================================================================== */
+
 export const getChatSessions = async () => {
   const response = await fetch(`${API_BASE_URL}/chat/sessions`, {
     method: 'GET',
@@ -326,7 +359,14 @@ export const deleteSession = async (sessionId) => {
 export const deleteChatSession = deleteSession;
 export const removeSession = deleteSession;
 
-// Stream chat response preserving newlines, whitespace, and markdown blocks
+/* ==========================================================================
+   Chat Stream Processing (Server-Sent Events)
+   ========================================================================== */
+
+/**
+ * Streams chat responses over SSE while maintaining formatting and markdown blocks.
+ * Supports both multipart form data (with file attachments) and standard JSON.
+ */
 export const streamMessage = async ({
   sessionId,
   message,
@@ -373,7 +413,9 @@ export const streamMessage = async ({
 
     if (response.status === 429) {
       let errJson = null;
-      try { errJson = await response.json(); } catch {}
+      try {
+        errJson = await response.json();
+      } catch {}
       const limitMsg = errJson?.message || 'Daily quota exceeded. Please sign in or try again after 24 hours.';
       if (onChunk) onChunk(limitMsg);
       if (onFinish) onFinish();
@@ -395,7 +437,7 @@ export const streamMessage = async ({
 
       buffer += decoder.decode(value, { stream: true });
 
-      // SSE events are separated by double newlines (\n\n)
+      // SSE event frames are separated by double newlines (\n\n)
       const events = buffer.replace(/\r\n/g, '\n').split('\n\n');
       buffer = events.pop() || '';
 
@@ -416,14 +458,14 @@ export const streamMessage = async ({
           }
         }
 
-        // Rejoin multiline payload with original newlines per SSE specification
+        // Rejoin multiline payloads preserving whitespace and markdown linebreaks
         if (dataLines.length > 0 && onChunk) {
           onChunk(dataLines.join('\n'));
         }
       }
     }
 
-    // Process any remaining event left in the buffer
+    // Flush any trailing event segment left in buffer
     if (buffer.trim()) {
       const lines = buffer.replace(/\r\n/g, '\n').split('\n');
       const dataLines = [];

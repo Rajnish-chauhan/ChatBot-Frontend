@@ -375,10 +375,39 @@ const App = () => {
           return updated;
         });
       },
-      onFinish: () => {
+      onFinish: async () => {
         setIsStreaming(false);
         isStreamingRef.current = false;
         abortControllerRef.current = null;
+
+        // Auto-fetch the final saved message from database so formatting matches reload immediately
+        try {
+          if (currentSessionId) {
+            const history = await getSessionMessages(currentSessionId);
+            if (Array.isArray(history) && history.length > 0) {
+              const lastMsg = history[history.length - 1];
+              if (lastMsg && (lastMsg.sender?.toLowerCase() !== 'user')) {
+                const finalFormattedText = lastMsg.text || lastMsg.content || '';
+                if (finalFormattedText) {
+                  setMessages((prev) => {
+                    const updated = [...prev];
+                    const lastIdx = updated.length - 1;
+                    if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
+                      updated[lastIdx] = {
+                        ...updated[lastIdx],
+                        text: finalFormattedText,
+                        content: finalFormattedText,
+                      };
+                    }
+                    return updated;
+                  });
+                }
+              }
+            }
+          }
+        } catch (syncErr) {
+          console.warn("Auto-sync final message failed:", syncErr);
+        }
       },
     });
   };

@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { 
-  X, 
   Mail, 
   Lock, 
   User, 
@@ -217,16 +216,9 @@ const Login = ({ isOpen, onClose, onSuccess, onLoginSuccess }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
       <div className="relative w-full max-w-sm sm:max-w-md bg-[#13161c] border border-[#212634] rounded-3xl shadow-2xl p-6 sm:p-8 text-white transition-all">
-        <button
-          onClick={onClose}
-          className="absolute top-5 right-5 p-1.5 text-gray-400 hover:text-white rounded-full hover:bg-white/10 transition"
-          aria-label="Close"
-        >
-          <X className="w-5 h-5" />
-        </button>
-
+        {/* Brand Header */}
         <div className="flex flex-col items-center text-center mb-6">
           <div className="mb-3">
             <Logo size={48} />

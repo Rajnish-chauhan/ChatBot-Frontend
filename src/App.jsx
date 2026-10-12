@@ -379,9 +379,8 @@ const App = () => {
     });
   };
 
-  // Profile update on successful login/registration
+  // Instant switch on login or register: clears previous chat immediately and loads new user data
   const handleLoginSuccess = async (userData) => {
-    // 1. Immediately wipe previous guest or user messages
     setActiveSessionId(null);
     setMessages([]);
 
@@ -403,7 +402,6 @@ const App = () => {
 
     setIsLoginOpen(false);
 
-    // 2. Load the authenticated user's sessions and first chat history
     try {
       const userSessions = await getChatSessions();
       const sessionList = Array.isArray(userSessions) ? userSessions : [];
@@ -437,7 +435,7 @@ const App = () => {
     }
   };
 
-  // Clear authenticated session and restore persistent browser guest account
+  // Clear authenticated session and trigger mandatory login modal on logout
   const handleLogout = async () => {
     logout();
     setUser(null);
@@ -475,7 +473,7 @@ const App = () => {
     setIsLoginOpen(true);
   };
 
-  // Clear session on account deletion and restore persistent browser guest account
+  // Clear session on account deletion and trigger mandatory login modal
   const handleAccountDeleted = async () => {
     logout();
     setUser(null);

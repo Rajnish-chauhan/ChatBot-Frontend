@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { setCredentials } from "../api/ChatApi";
+import React, { useState, useEffect } from "react";
+import { setCredentials, checkUsernameExists } from "../api/ChatApi";
 
 export default function OAuthPasswordSetupModal({ isOpen, initialUsername, onSuccess }) {
   const [setupUsername, setSetupUsername] = useState(initialUsername || "");
@@ -10,6 +10,39 @@ export default function OAuthPasswordSetupModal({ isOpen, initialUsername, onSuc
   const [setupLoading, setSetupLoading] = useState(false);
   const [setupError, setSetupError] = useState("");
 
+  const [usernameExists, setUsernameExists] = useState(false);
+  const [checkingUsername, setCheckingUsername] = useState(false);
+
+  useEffect(() => {
+    if (initialUsername) {
+      setSetupUsername(initialUsername);
+    }
+  }, [initialUsername]);
+
+  // Live check whether the chosen username is already taken by another user
+  useEffect(() => {
+    const trimmed = setupUsername.trim();
+    if (!isOpen || !trimmed || trimmed.length < 2 || trimmed === initialUsername) {
+      setUsernameExists(false);
+      setCheckingUsername(false);
+      return;
+    }
+
+    setCheckingUsername(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await checkUsernameExists(trimmed);
+        setUsernameExists(Boolean(res?.exists));
+      } catch {
+        setUsernameExists(false);
+      } finally {
+        setCheckingUsername(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [setupUsername, initialUsername, isOpen]);
+
   if (!isOpen) return null;
 
   const handleSubmit = async (e) => {
@@ -18,6 +51,11 @@ export default function OAuthPasswordSetupModal({ isOpen, initialUsername, onSuc
 
     if (!setupUsername.trim() || !setupPassword.trim()) {
       setSetupError("Please fill in all required fields.");
+      return;
+    }
+
+    if (usernameExists) {
+      setSetupError("This username is already taken. Please choose another.");
       return;
     }
 
@@ -35,7 +73,7 @@ export default function OAuthPasswordSetupModal({ isOpen, initialUsername, onSuc
 
     try {
       const res = await setCredentials(setupUsername.trim(), setupPassword);
-      onSuccess(res.token, res.username);
+      if (onSuccess) onSuccess(res.token, res.username);
     } catch (err) {
       setSetupError(err.message || "Failed to set credentials.");
     } finally {
@@ -44,13 +82,13 @@ export default function OAuthPasswordSetupModal({ isOpen, initialUsername, onSuc
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm px-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm px-4">
       <div className="bg-white dark:bg-[#1e1e1e] p-6 rounded-2xl shadow-2xl w-full max-w-sm border border-slate-200 dark:border-slate-800">
         <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-1">
-          Set Username & Password
+          Complete Account Setup
         </h3>
         <p className="text-xs text-slate-500 dark:text-slate-400 mb-4 leading-relaxed">
-          You signed in with Google. Customize your username and password so you can sign in directly anytime.
+          You signed in with Google. Set your username and password to finalize your account.
         </p>
 
         {setupError && (
@@ -67,10 +105,23 @@ export default function OAuthPasswordSetupModal({ isOpen, initialUsername, onSuc
             <input
               type="text"
               required
-              defaultValue={setupUsername}
+              value={setupUsername}
               onChange={(e) => setSetupUsername(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-[#2d2d2d] border border-slate-300 dark:border-slate-700 text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className={`w-full px-3 py-2 rounded-lg bg-slate-50 dark:bg-[#2d2d2d] border text-slate-900 dark:text-white text-sm focus:outline-none focus:ring-2 ${
+                usernameExists
+                  ? "border-red-500 focus:ring-red-500"
+                  : "border-slate-300 dark:border-slate-700 focus:ring-blue-500"
+              }`}
             />
+            {setupUsername.trim().length >= 2 && setupUsername.trim() !== initialUsername && (
+              <p className={`text-[11px] mt-1 ${usernameExists ? "text-red-500" : "text-emerald-500"}`}>
+                {checkingUsername
+                  ? "Checking username..."
+                  : usernameExists
+                  ? "Username is already taken."
+                  : "Username is available."}
+              </p>
+            )}
           </div>
 
           <div>
@@ -146,8 +197,13 @@ export default function OAuthPasswordSetupModal({ isOpen, initialUsername, onSuc
 
           <button
             type="submit"
-            disabled={setupLoading || (setupConfirmPassword && setupPassword !== setupConfirmPassword)}
-            className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-sm transition disabled:opacity-50 mt-2"
+            disabled={
+              setupLoading ||
+              usernameExists ||
+              checkingUsername ||
+              Boolean(setupConfirmPassword && setupPassword !== setupConfirmPassword)
+            }
+            className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium text-sm transition disabled:opacity-50 mt-2"
           >
             {setupLoading ? "Saving..." : "Save Credentials"}
           </button>

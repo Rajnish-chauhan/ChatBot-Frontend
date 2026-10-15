@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { PanelLeft, Plus, User, LogIn, Menu } from 'lucide-react';
+import { PanelLeft, User, LogIn, Menu } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import ChatBox from './components/ChatBox';
 import MessageInput from './components/MessageInput';
 import ThemeToggle from './components/ThemeToggle';
+import Logo from './components/Logo';
 import Login from './components/Login';
 import ProfileModal from './components/ProfileModal';
 import OAuthPasswordSetupModal from './components/OAuthPasswordSetupModal';
@@ -19,9 +20,10 @@ import {
   getUserProfile,
   getToken,
   setToken,
-  loginAsGuest,
   logout,
 } from './api/ChatApi';
+
+const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024; // 20 MB limit
 
 const App = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -44,20 +46,30 @@ const App = () => {
   const isStreamingRef = useRef(false);
   const newCreatedSessionIdRef = useRef(null);
 
+  // Smooth streaming buffer refs for ChatGPT/Claude-like progressive text reveal
+  const streamQueueRef = useRef('');
+  const displayedContentRef = useRef('');
+  const streamTimerRef = useRef(null);
+  const networkDoneRef = useRef(false);
+
   useEffect(() => {
     isStreamingRef.current = isStreaming;
   }, [isStreaming]);
 
-  // Handle responsive layout
+  useEffect(() => {
+    return () => {
+      if (streamTimerRef.current) {
+        clearInterval(streamTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Adapt sidebar visibility across desktop and mobile viewports
   useEffect(() => {
     const handleResize = () => {
       const mobile = window.innerWidth < 768;
       setIsMobile(mobile);
-      if (mobile) {
-        setIsSidebarOpen(false);
-      } else {
-        setIsSidebarOpen(true);
-      }
+      setIsSidebarOpen(!mobile);
     };
 
     handleResize();
@@ -65,7 +77,7 @@ const App = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Initialize authentication and user session
+  // Require explicit authentication choice (Guest, Login, Google, or Register) before entering
   useEffect(() => {
     const initAuth = async () => {
       const urlParams = new URLSearchParams(window.location.search);
@@ -76,53 +88,44 @@ const App = () => {
         window.history.replaceState({}, document.title, window.location.pathname);
       }
 
-      let token = getToken();
+      const token = getToken();
 
       if (!token) {
-        try {
-          const guestData = await loginAsGuest();
-          setUser({ username: guestData.username, isGuest: true });
-        } catch (e) {
-          console.error("Guest login initialization failure:", e);
-        }
+        setUser(null);
         setLoginInitialMode('welcome');
         setIsLoginOpen(true);
-      } else {
-        try {
-          const profile = await getUserProfile();
-          setUser(profile);
+        return;
+      }
 
-          const isGuestUser = profile?.isGuest ?? profile?.guest ?? false;
-          const hasPassword = profile?.isPasswordSet ?? profile?.passwordSet ?? false;
+      try {
+        const profile = await getUserProfile();
+        setUser(profile);
 
-          if (!isGuestUser && !hasPassword) {
-            setIsOAuthPasswordOpen(true);
-          }
-        } catch (err) {
-          console.warn("Session invalid or expired, renewing guest session:", err);
-          try {
-            setToken(null);
-            localStorage.removeItem('guest_token');
-            localStorage.removeItem('guest_username');
-            const guestData = await loginAsGuest(true);
-            setUser({ username: guestData.username, isGuest: true });
-          } catch {}
-          setLoginInitialMode('welcome');
-          setIsLoginOpen(true);
+        const isGuestUser = profile?.isGuest ?? profile?.guest ?? false;
+        const hasPassword = profile?.isPasswordSet ?? profile?.passwordSet ?? false;
+
+        if (!isGuestUser && !hasPassword) {
+          setIsOAuthPasswordOpen(true);
         }
+      } catch (err) {
+        console.warn('Stored token is invalid or expired:', err);
+        logout();
+        setUser(null);
+        setLoginInitialMode('welcome');
+        setIsLoginOpen(true);
       }
     };
 
     initAuth();
   }, []);
 
-  // Fetch session history for current user
   const loadSessions = async () => {
     try {
       const data = await getChatSessions();
-      setSessions(Array.isArray(data) ? data : []);
-      if (Array.isArray(data) && data.length > 0 && !activeSessionId) {
-        setActiveSessionId(data[0].id);
+      const list = Array.isArray(data) ? data : [];
+      setSessions(list);
+      if (list.length > 0 && !activeSessionId) {
+        setActiveSessionId(list[0].id);
       }
     } catch {
       setSessions([]);
@@ -132,10 +135,13 @@ const App = () => {
   useEffect(() => {
     if (user) {
       loadSessions();
+    } else {
+      setSessions([]);
+      setActiveSessionId(null);
+      setMessages([]);
     }
   }, [user]);
 
-  // Reload current user profile to update avatar across the UI
   const handleProfileUpdated = async () => {
     try {
       const updatedProfile = await getUserProfile();
@@ -145,7 +151,6 @@ const App = () => {
     }
   };
 
-  // Load chat messages when activeSessionId changes
   useEffect(() => {
     const loadMessages = async () => {
       if (!activeSessionId) {
@@ -178,7 +183,6 @@ const App = () => {
     loadMessages();
   }, [activeSessionId]);
 
-  // Create a new chat session
   const handleNewChat = async () => {
     if (isStreaming) {
       handleStopGeneration();
@@ -199,7 +203,7 @@ const App = () => {
       setActiveSessionId(newSession.id);
       setMessages([]);
     } catch (err) {
-      console.error('Failed to create new session immediately:', err);
+      console.error('Failed to create new session:', err);
       setActiveSessionId(null);
       setMessages([]);
     }
@@ -244,27 +248,143 @@ const App = () => {
     }
   };
 
+  // Append a styled File Size Too Large warning card directly into the ChatBox
+  const handleFileTooLarge = (fileName, warningMessage) => {
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: 'u_oversize_' + Date.now(),
+        sender: 'user',
+        role: 'user',
+        text: `Attempted to attach: ${fileName}`,
+        content: `Attempted to attach: ${fileName}`,
+        attachments: [{ name: fileName }],
+      },
+      {
+        id: 'ai_oversize_' + (Date.now() + 1),
+        sender: 'assistant',
+        role: 'assistant',
+        text: warningMessage,
+        content: warningMessage,
+        isFileSizeError: true,
+      },
+    ]);
+  };
+
   const handleStopGeneration = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
+    if (streamTimerRef.current) {
+      clearInterval(streamTimerRef.current);
+      streamTimerRef.current = null;
+    }
+    streamQueueRef.current = '';
+    networkDoneRef.current = true;
     setIsStreaming(false);
     isStreamingRef.current = false;
   };
 
-  // Send message and stream reply
+  const startSmoothTicker = (sessionIdForSync) => {
+    if (streamTimerRef.current) {
+      clearInterval(streamTimerRef.current);
+    }
+
+    streamTimerRef.current = setInterval(() => {
+      const queue = streamQueueRef.current;
+      if (queue.length > 0) {
+        const charsToTake = Math.max(2, Math.min(14, Math.ceil(queue.length / 8)));
+        const nextSlice = queue.slice(0, charsToTake);
+        streamQueueRef.current = queue.slice(charsToTake);
+        displayedContentRef.current += nextSlice;
+        const snapshot = displayedContentRef.current;
+
+        setMessages((prev) => {
+          const updated = [...prev];
+          const lastIdx = updated.length - 1;
+          if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
+            updated[lastIdx] = {
+              ...updated[lastIdx],
+              text: snapshot,
+              content: snapshot,
+            };
+          }
+          return updated;
+        });
+      } else if (networkDoneRef.current) {
+        clearInterval(streamTimerRef.current);
+        streamTimerRef.current = null;
+        setIsStreaming(false);
+        isStreamingRef.current = false;
+        abortControllerRef.current = null;
+
+        if (sessionIdForSync) {
+          getSessionMessages(sessionIdForSync)
+            .then((history) => {
+              if (Array.isArray(history) && history.length > 0) {
+                const lastMsg = history[history.length - 1];
+                if (lastMsg && lastMsg.sender?.toLowerCase() !== 'user') {
+                  const finalFormattedText = lastMsg.text || lastMsg.content || '';
+                  if (finalFormattedText) {
+                    setMessages((prev) => {
+                      const updated = [...prev];
+                      const lastIdx = updated.length - 1;
+                      if (
+                        lastIdx >= 0 &&
+                        updated[lastIdx].role === 'assistant' &&
+                        !updated[lastIdx].isRateLimitError &&
+                        !updated[lastIdx].isFileSizeError
+                      ) {
+                        updated[lastIdx] = {
+                          ...updated[lastIdx],
+                          text: finalFormattedText,
+                          content: finalFormattedText,
+                        };
+                      }
+                      return updated;
+                    });
+                  }
+                }
+              }
+            })
+            .catch(() => {});
+        }
+      }
+    }, 18);
+  };
+
   const handleSendMessage = async (text, files = []) => {
     if ((!text.trim() && files.length === 0) || isStreaming) return;
 
-    let token = getToken();
-    if (!token) {
-      try {
-        const guestData = await loginAsGuest();
-        token = guestData.token;
-        setUser({ username: guestData.username, isGuest: true });
-      } catch (e) {
-        console.error("Auto guest login error:", e);
+    const token = getToken();
+    if (!token || !user) {
+      setLoginInitialMode('welcome');
+      setIsLoginOpen(true);
+      return;
+    }
+
+    // Verify no single file or total attachment payload exceeds 20 MB
+    if (files && files.length > 0) {
+      let totalSize = 0;
+      for (const file of files) {
+        totalSize += file.size || 0;
+        if (file.size > MAX_FILE_SIZE_BYTES) {
+          const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+          handleFileTooLarge(
+            file.name,
+            `The file "${file.name}" (${sizeMb} MB) exceeds the 20 MB maximum limit. Please compress the file or upload a document smaller than 20 MB.`
+          );
+          return;
+        }
+      }
+      if (totalSize > MAX_FILE_SIZE_BYTES) {
+        const totalMb = (totalSize / (1024 * 1024)).toFixed(1);
+        handleFileTooLarge(
+          files.map((f) => f.name).join(', '),
+          `Total attachment size (${totalMb} MB) exceeds the 20 MB maximum limit. Please upload files totaling under 20 MB.`
+        );
+        return;
       }
     }
 
@@ -289,14 +409,14 @@ const App = () => {
             text: 'Failed to create chat session. Please verify your connection or sign in again.',
             content: 'Failed to create chat session. Please verify your connection or sign in again.',
             isError: true,
-          }
+          },
         ]);
         return;
       }
     } else {
       const currentSession = sessions.find((s) => s.id === currentSessionId);
       if (currentSession && (currentSession.title === 'New chat' || currentSession.title === 'New Chat')) {
-        const newTitle = text.trim().slice(0, 25) || 'New chat';
+        const newTitle = text.trim().slice(0, 25) || (files[0] ? files[0].name : 'New chat');
         setSessions((prev) =>
           prev.map((s) => (s.id === currentSessionId ? { ...s, title: newTitle } : s))
         );
@@ -320,106 +440,100 @@ const App = () => {
       content: '',
     };
 
+    streamQueueRef.current = '';
+    displayedContentRef.current = '';
+    networkDoneRef.current = false;
+
     setMessages((prev) => [...prev, userMessage, assistantPlaceholder]);
     setIsStreaming(true);
     isStreamingRef.current = true;
 
     abortControllerRef.current = new AbortController();
-    let accumulatedContent = '';
+    startSmoothTicker(currentSessionId);
 
     await streamMessage({
       sessionId: currentSessionId,
       message: text.trim(),
       files,
       signal: abortControllerRef.current.signal,
-      onChunk: (chunk) => {
-        accumulatedContent += chunk;
-        setMessages((prev) => {
-          const updated = [...prev];
-          const lastIdx = updated.length - 1;
-          if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
-            updated[lastIdx] = {
-              ...updated[lastIdx],
-              text: accumulatedContent,
-              content: accumulatedContent,
-            };
-            return updated;
+      onChunk: (chunk, isRateLimit = false, isGuestLimit = false) => {
+        if (isRateLimit) {
+          if (streamTimerRef.current) {
+            clearInterval(streamTimerRef.current);
+            streamTimerRef.current = null;
           }
-          return [
-            ...updated,
-            {
-              id: 'msg_ai_' + Date.now(),
-              role: 'assistant',
-              sender: 'assistant',
-              text: accumulatedContent,
-              content: accumulatedContent,
+          streamQueueRef.current = '';
+          networkDoneRef.current = true;
+          setIsStreaming(false);
+          isStreamingRef.current = false;
+
+          setMessages((prev) => {
+            const updated = [...prev];
+            const lastIdx = updated.length - 1;
+            if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
+              updated[lastIdx] = {
+                ...updated[lastIdx],
+                text: chunk,
+                content: chunk,
+                isRateLimitError: true,
+                isGuestError: Boolean(isGuestLimit),
+              };
             }
-          ];
-        });
+            return updated;
+          });
+          return;
+        }
+
+        streamQueueRef.current += chunk;
       },
       onError: (err) => {
         console.error('SSE Stream error:', err);
+        if (streamTimerRef.current) {
+          clearInterval(streamTimerRef.current);
+          streamTimerRef.current = null;
+        }
+        streamQueueRef.current = '';
+        networkDoneRef.current = true;
         setIsStreaming(false);
         isStreamingRef.current = false;
+
+        const isOversizeErr =
+          err?.message?.includes('20 MB') ||
+          err?.message?.includes('FILE_TOO_LARGE') ||
+          err?.message?.includes('413');
+
         setMessages((prev) => {
           const updated = [...prev];
           const lastIdx = updated.length - 1;
           if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
             updated[lastIdx] = {
               ...updated[lastIdx],
-              text: accumulatedContent || 'An error occurred while generating the response. Please check server logs.',
-              content: accumulatedContent || 'An error occurred while generating the response. Please check server logs.',
-              isError: true,
+              text: isOversizeErr
+                ? 'The uploaded file exceeds the maximum allowed size of 20 MB. Please compress the file or upload a smaller document.'
+                : displayedContentRef.current || 'An error occurred while generating the response. Please check server logs.',
+              content: isOversizeErr
+                ? 'The uploaded file exceeds the maximum allowed size of 20 MB. Please compress the file or upload a smaller document.'
+                : displayedContentRef.current || 'An error occurred while generating the response. Please check server logs.',
+              isFileSizeError: isOversizeErr,
+              isError: !isOversizeErr,
             };
           }
           return updated;
         });
       },
-      onFinish: async () => {
-        setIsStreaming(false);
-        isStreamingRef.current = false;
-        abortControllerRef.current = null;
-
-        // Auto-fetch the final saved message from database so formatting matches reload immediately
-        try {
-          if (currentSessionId) {
-            const history = await getSessionMessages(currentSessionId);
-            if (Array.isArray(history) && history.length > 0) {
-              const lastMsg = history[history.length - 1];
-              if (lastMsg && (lastMsg.sender?.toLowerCase() !== 'user')) {
-                const finalFormattedText = lastMsg.text || lastMsg.content || '';
-                if (finalFormattedText) {
-                  setMessages((prev) => {
-                    const updated = [...prev];
-                    const lastIdx = updated.length - 1;
-                    if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
-                      updated[lastIdx] = {
-                        ...updated[lastIdx],
-                        text: finalFormattedText,
-                        content: finalFormattedText,
-                      };
-                    }
-                    return updated;
-                  });
-                }
-              }
-            }
-          }
-        } catch (syncErr) {
-          console.warn("Auto-sync final message failed:", syncErr);
-        }
+      onFinish: () => {
+        networkDoneRef.current = true;
       },
     });
   };
 
-  const handleLoginSuccess = async (userData) => {
+  const handleLoginSuccess = async (userData, isNewRegistration = false) => {
     setActiveSessionId(null);
     setMessages([]);
+    setSessions([]);
 
-    let currentUserProfile = userData;
     try {
       const fullProfile = await getUserProfile();
-      currentUserProfile = fullProfile;
       setUser(fullProfile);
 
       const isGuestUser = fullProfile?.isGuest ?? fullProfile?.guest ?? false;
@@ -434,6 +548,13 @@ const App = () => {
 
     setIsLoginOpen(false);
 
+    if (isNewRegistration) {
+      setActiveSessionId(null);
+      setMessages([]);
+      setSessions([]);
+      return;
+    }
+
     try {
       const userSessions = await getChatSessions();
       const sessionList = Array.isArray(userSessions) ? userSessions : [];
@@ -442,19 +563,17 @@ const App = () => {
       if (sessionList.length > 0) {
         const firstSessionId = sessionList[0].id;
         setActiveSessionId(firstSessionId);
-        try {
-          const history = await getSessionMessages(firstSessionId);
-          if (Array.isArray(history)) {
-            setMessages(history.map((m) => ({
+        const history = await getSessionMessages(firstSessionId);
+        if (Array.isArray(history)) {
+          setMessages(
+            history.map((m) => ({
               id: m.id,
               role: m.sender?.toLowerCase() === 'user' ? 'user' : 'assistant',
               sender: m.sender,
               text: m.text,
               content: m.text,
-            })));
-          }
-        } catch {
-          setMessages([]);
+            }))
+          );
         }
       } else {
         setActiveSessionId(null);
@@ -467,61 +586,32 @@ const App = () => {
     }
   };
 
-  const handleLogout = async () => {
+  const handleLogout = () => {
+    if (isStreaming) {
+      handleStopGeneration();
+    }
     logout();
     setUser(null);
+    setSessions([]);
     setActiveSessionId(null);
     setMessages([]);
     setIsProfileOpen(false);
     setIsLogoutConfirmOpen(false);
-
-    try {
-      const guestData = await loginAsGuest();
-      setUser({ username: guestData.username, isGuest: true });
-
-      const guestSessions = await getChatSessions();
-      const sessionList = Array.isArray(guestSessions) ? guestSessions : [];
-      setSessions(sessionList);
-
-      if (sessionList.length > 0) {
-        setActiveSessionId(sessionList[0].id);
-        const history = await getSessionMessages(sessionList[0].id);
-        if (Array.isArray(history)) {
-          setMessages(history.map((m) => ({
-            id: m.id,
-            role: m.sender?.toLowerCase() === 'user' ? 'user' : 'assistant',
-            sender: m.sender,
-            text: m.text,
-            content: m.text,
-          })));
-        }
-      }
-    } catch (e) {
-      setSessions([]);
-    }
-
-    setLoginInitialMode('welcome');
+    setLoginInitialMode('login');
     setIsLoginOpen(true);
   };
 
-  const handleAccountDeleted = async () => {
+  const handleAccountDeleted = () => {
+    if (isStreaming) {
+      handleStopGeneration();
+    }
     logout();
     setUser(null);
+    setSessions([]);
     setActiveSessionId(null);
     setMessages([]);
     setIsDeleteConfirmOpen(false);
     setIsProfileOpen(false);
-
-    try {
-      const guestData = await loginAsGuest();
-      setUser({ username: guestData.username, isGuest: true });
-
-      const guestSessions = await getChatSessions();
-      setSessions(Array.isArray(guestSessions) ? guestSessions : []);
-    } catch (e) {
-      setSessions([]);
-    }
-
     setLoginInitialMode('welcome');
     setIsLoginOpen(true);
   };
@@ -529,7 +619,7 @@ const App = () => {
   const isGuest = Boolean(!user || user.isGuest === true || user.guest === true);
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-white dark:bg-[#121212] text-gray-900 dark:text-gray-100 transition-colors">
+    <div className="flex h-[100dvh] w-screen overflow-hidden bg-white dark:bg-[#121212] text-gray-900 dark:text-gray-100 transition-colors">
       {isMobile && isSidebarOpen && (
         <div
           onClick={() => setIsSidebarOpen(false)}
@@ -537,8 +627,14 @@ const App = () => {
         />
       )}
 
-      {/* Sidebar container */}
-      <div className={`${isMobile ? 'fixed inset-y-0 left-0 z-40' : 'relative'}`}>
+      {/* Left sidebar drawer on both mobile and desktop */}
+      <div
+        className={`${
+          isMobile
+            ? 'fixed inset-y-0 left-0 z-40 shadow-2xl'
+            : 'relative'
+        }`}
+      >
         <Sidebar
           isOpen={isSidebarOpen}
           isMobile={isMobile}
@@ -550,6 +646,7 @@ const App = () => {
           onDeleteSession={handleDeleteSession}
           onRenameSession={handleRenameSession}
           user={user}
+          onProfileUpdated={handleProfileUpdated}
           onOpenLogin={(initialView = 'welcome') => {
             setLoginInitialMode(initialView);
             setIsLoginOpen(true);
@@ -562,24 +659,38 @@ const App = () => {
 
       <div className="flex-1 flex flex-col h-full min-w-0 relative">
         <header className="h-14 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between px-4 z-10 bg-white/80 dark:bg-[#121212]/80 backdrop-blur-sm shrink-0">
-          <div className="flex items-center gap-2">
+          {/* Left-aligned hamburger / sidebar button and brand logo */}
+          <div className="flex items-center gap-2.5">
             {(!isSidebarOpen || isMobile) && (
               <button
                 type="button"
                 onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-300 transition"
+                className="p-2 rounded-xl border border-slate-200 dark:border-slate-700/60 hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-200 transition"
                 aria-label="Toggle sidebar"
               >
                 {isMobile ? <Menu className="w-5 h-5" /> : <PanelLeft className="w-5 h-5" />}
               </button>
             )}
+
+            {(!isSidebarOpen || isMobile) && (
+              <div className="flex items-center gap-2 select-none">
+                <Logo size={28} />
+                <div className="flex items-center gap-1.5">
+                  <span className="font-bold text-slate-900 dark:text-white tracking-tight text-sm sm:text-base">
+                    Chat<span className="text-blue-500">Bot</span>
+                  </span>
+                  <span className="px-1.5 py-0.5 text-[10px] font-bold bg-blue-500/10 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400 rounded-md border border-blue-500/20 dark:border-blue-500/30">
+                    AI
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
             <ThemeToggle />
 
-            {/* Mobile header profile button */}
-            {isMobile && isGuest && (
+            {isMobile && isGuest && user && (
               <button
                 type="button"
                 onClick={() => {
@@ -593,11 +704,12 @@ const App = () => {
               </button>
             )}
 
-            {isMobile && !isGuest && (
+            {isMobile && !isGuest && user && (
               <button
                 type="button"
                 onClick={() => setIsProfileOpen(true)}
-                className="w-8 h-8 rounded-full bg-blue-600 overflow-hidden text-white flex items-center justify-center font-bold text-xs shadow-xs"
+                className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 overflow-hidden text-white flex items-center justify-center font-bold text-xs shadow-xs"
+                title="Profile & Settings"
               >
                 {user?.profilePic ? (
                   <img
@@ -613,7 +725,7 @@ const App = () => {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto px-4 md:px-0">
+        <main className="flex-1 overflow-y-auto px-4 md:px-0 flex flex-col">
           <ChatBox
             messages={messages}
             isStreaming={isStreaming}
@@ -627,6 +739,7 @@ const App = () => {
         <footer className="shrink-0 p-4 max-w-4xl w-full mx-auto">
           <MessageInput
             onSendMessage={handleSendMessage}
+            onFileTooLarge={handleFileTooLarge}
             isStreaming={isStreaming}
             onStopStreaming={handleStopGeneration}
             onStopGeneration={handleStopGeneration}
@@ -637,7 +750,10 @@ const App = () => {
       <Login
         isOpen={isLoginOpen}
         initialMode={loginInitialMode}
-        onClose={() => setIsLoginOpen(false)}
+        canClose={Boolean(user)}
+        onClose={() => {
+          if (user) setIsLoginOpen(false);
+        }}
         onSuccess={handleLoginSuccess}
         onLoginSuccess={handleLoginSuccess}
       />

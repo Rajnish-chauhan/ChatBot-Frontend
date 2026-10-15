@@ -1,37 +1,48 @@
-import React, { useState } from 'react';
-import { 
-  Mail, 
-  Lock, 
-  User, 
-  KeyRound, 
-  AlertCircle, 
-  CheckCircle2, 
-  ArrowLeft, 
-  LogIn as LogInIcon, 
-  UserPlus, 
+import React, { useState, useEffect } from 'react';
+import {
+  Mail,
+  Lock,
+  User,
+  KeyRound,
+  AlertCircle,
+  CheckCircle2,
+  ArrowLeft,
+  LogIn as LogInIcon,
+  UserPlus,
   UserCheck,
-  ShieldCheck
+  ShieldCheck,
+  Eye,
+  EyeOff,
+  X,
 } from 'lucide-react';
-import { 
-  login, 
-  guestLogin, 
-  sendOtp, 
+import {
+  login,
+  guestLogin,
+  sendOtp,
   verifyOtpCode,
-  registerWithOtp, 
-  sendForgotPasswordOtp, 
-  resetPasswordWithOtp, 
-  OAUTH2_GOOGLE_URL 
+  registerWithOtp,
+  checkEmailExists,
+  checkUsernameExists,
+  sendForgotPasswordOtp,
+  resetPasswordWithOtp,
+  OAUTH2_GOOGLE_URL,
 } from '../api/ChatApi';
 import Logo from './Logo';
 
-const Login = ({ isOpen, onClose, onSuccess, onLoginSuccess }) => {
-  // Modal view states: welcome, login, register_email, register_otp, register_password, forgot_email, forgot_verify
-  const [mode, setMode] = useState('welcome');
+const Login = ({
+  isOpen,
+  initialMode = 'welcome',
+  canClose = false,
+  onClose,
+  onSuccess,
+  onLoginSuccess,
+}) => {
+  const [mode, setMode] = useState(initialMode);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
-  // Form input states
+  // Form field states
   const [emailOrUsername, setEmailOrUsername] = useState('');
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
@@ -40,12 +51,80 @@ const Login = ({ isOpen, onClose, onSuccess, onLoginSuccess }) => {
   const [otp, setOtp] = useState('');
   const [newPassword, setNewPassword] = useState('');
 
+  // Password visibility toggle states
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [showRegisterPassword, setShowRegisterPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showResetPassword, setShowResetPassword] = useState(false);
+
+  // Live availability states for email and username
+  const [emailExists, setEmailExists] = useState(false);
+  const [checkingEmail, setCheckingEmail] = useState(false);
+  const [usernameExists, setUsernameExists] = useState(false);
+  const [checkingUsername, setCheckingUsername] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setMode(initialMode || 'welcome');
+      setError('');
+      setSuccessMsg('');
+    }
+  }, [isOpen, initialMode]);
+
+  // Real-time email availability check while typing in registration view
+  useEffect(() => {
+    const trimmed = email.trim();
+    if (mode !== 'register_email' || !trimmed || !trimmed.includes('@')) {
+      setEmailExists(false);
+      setCheckingEmail(false);
+      return;
+    }
+
+    setCheckingEmail(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await checkEmailExists(trimmed);
+        setEmailExists(Boolean(res?.exists));
+      } catch {
+        setEmailExists(false);
+      } finally {
+        setCheckingEmail(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [email, mode]);
+
+  // Real-time username availability check while typing in registration credential step
+  useEffect(() => {
+    const trimmed = username.trim();
+    if (mode !== 'register_password' || !trimmed || trimmed.length < 2) {
+      setUsernameExists(false);
+      setCheckingUsername(false);
+      return;
+    }
+
+    setCheckingUsername(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await checkUsernameExists(trimmed);
+        setUsernameExists(Boolean(res?.exists));
+      } catch {
+        setUsernameExists(false);
+      } finally {
+        setCheckingUsername(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [username, mode]);
+
   if (!isOpen) return null;
 
-  const handleAuthSuccess = (userData) => {
-    if (onSuccess) onSuccess(userData);
-    if (onLoginSuccess) onLoginSuccess(userData);
-    onClose();
+  const handleAuthSuccess = (userData, isNewRegistration = false) => {
+    const callback = onLoginSuccess || onSuccess;
+    if (callback) callback(userData, isNewRegistration);
+    if (onClose) onClose();
   };
 
   const switchMode = (newMode) => {
@@ -54,13 +133,12 @@ const Login = ({ isOpen, onClose, onSuccess, onLoginSuccess }) => {
     setSuccessMsg('');
   };
 
-  // Immediate guest session entry
   const handleGuestEntry = async () => {
     try {
       setLoading(true);
       setError('');
       const data = await guestLogin();
-      handleAuthSuccess(data.user || data);
+      handleAuthSuccess(data.user || data, false);
     } catch (err) {
       setError(err.message || 'Failed to initialize guest session.');
     } finally {
@@ -68,7 +146,6 @@ const Login = ({ isOpen, onClose, onSuccess, onLoginSuccess }) => {
     }
   };
 
-  // Existing account login
   const handleLoginSubmit = async (e) => {
     e.preventDefault();
     if (!emailOrUsername.trim() || !password) {
@@ -80,7 +157,7 @@ const Login = ({ isOpen, onClose, onSuccess, onLoginSuccess }) => {
       setLoading(true);
       setError('');
       const data = await login(emailOrUsername.trim(), password);
-      handleAuthSuccess(data.user || data);
+      handleAuthSuccess(data.user || data, false);
     } catch (err) {
       setError(err.message || 'Invalid username or password.');
     } finally {
@@ -88,17 +165,27 @@ const Login = ({ isOpen, onClose, onSuccess, onLoginSuccess }) => {
     }
   };
 
-  // Registration Step 1: Send OTP to provided email
   const handleSendRegisterOtp = async (e) => {
     e.preventDefault();
     if (!email.trim() || !email.includes('@')) {
       setError('Please enter a valid email address.');
       return;
     }
+    if (emailExists) {
+      setError('This email is already registered. Please sign in instead.');
+      return;
+    }
 
     try {
       setLoading(true);
       setError('');
+      const checkRes = await checkEmailExists(email.trim());
+      if (checkRes?.exists) {
+        setEmailExists(true);
+        setError('This email is already registered. Please sign in instead.');
+        return;
+      }
+
       await sendOtp(email.trim());
       setSuccessMsg(`Verification code sent to ${email.trim()}`);
       setMode('register_otp');
@@ -109,7 +196,6 @@ const Login = ({ isOpen, onClose, onSuccess, onLoginSuccess }) => {
     }
   };
 
-  // Registration Step 2: Verify OTP code first
   const handleVerifyRegisterOtp = async (e) => {
     e.preventDefault();
     setError('');
@@ -122,7 +208,7 @@ const Login = ({ isOpen, onClose, onSuccess, onLoginSuccess }) => {
     try {
       setLoading(true);
       await verifyOtpCode(email.trim(), otp.trim());
-      setSuccessMsg('Email verified successfully. Now choose your username and password.');
+      setSuccessMsg('');
       setMode('register_password');
     } catch (err) {
       setError(err.message || 'Invalid or expired OTP code. Please try again.');
@@ -131,13 +217,16 @@ const Login = ({ isOpen, onClose, onSuccess, onLoginSuccess }) => {
     }
   };
 
-  // Registration Step 3: Set username and password after OTP verification
   const handleCompleteRegistration = async (e) => {
     e.preventDefault();
     setError('');
 
     if (!username.trim()) {
       setError('Please choose a username.');
+      return;
+    }
+    if (usernameExists) {
+      setError('This username is already taken. Please choose another.');
       return;
     }
     if (!password || password.length < 6) {
@@ -151,13 +240,20 @@ const Login = ({ isOpen, onClose, onSuccess, onLoginSuccess }) => {
 
     try {
       setLoading(true);
+      const checkUser = await checkUsernameExists(username.trim());
+      if (checkUser?.exists) {
+        setUsernameExists(true);
+        setError('This username is already taken. Please choose another.');
+        return;
+      }
+
       const data = await registerWithOtp({
         email: email.trim(),
         otp: otp.trim(),
         username: username.trim(),
         password,
       });
-      handleAuthSuccess(data.user || data);
+      handleAuthSuccess(data.user || data, true);
     } catch (err) {
       setError(err.message || 'Registration failed. Please try again.');
     } finally {
@@ -165,7 +261,6 @@ const Login = ({ isOpen, onClose, onSuccess, onLoginSuccess }) => {
     }
   };
 
-  // Request password reset OTP
   const handleSendForgotOtp = async (e) => {
     e.preventDefault();
     if (!email.trim()) {
@@ -186,7 +281,6 @@ const Login = ({ isOpen, onClose, onSuccess, onLoginSuccess }) => {
     }
   };
 
-  // Set new password with OTP verification
   const handleResetPassword = async (e) => {
     e.preventDefault();
     if (!otp.trim() || !newPassword) {
@@ -216,9 +310,19 @@ const Login = ({ isOpen, onClose, onSuccess, onLoginSuccess }) => {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-md animate-fadeIn">
       <div className="relative w-full max-w-sm sm:max-w-md bg-[#13161c] border border-[#212634] rounded-3xl shadow-2xl p-6 sm:p-8 text-white transition-all">
-        {/* Brand Header */}
+        {canClose && onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="absolute top-5 right-5 p-1.5 rounded-full text-gray-400 hover:text-white hover:bg-[#212634] transition-colors"
+            title="Close"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
+
         <div className="flex flex-col items-center text-center mb-6">
           <div className="mb-3">
             <Logo size={48} />
@@ -241,7 +345,6 @@ const Login = ({ isOpen, onClose, onSuccess, onLoginSuccess }) => {
           </div>
         )}
 
-        {/* Welcome selection view */}
         {mode === 'welcome' && (
           <div className="space-y-3.5">
             <div className="grid grid-cols-2 gap-3">
@@ -303,7 +406,6 @@ const Login = ({ isOpen, onClose, onSuccess, onLoginSuccess }) => {
           </div>
         )}
 
-        {/* Existing account login view */}
         {mode === 'login' && (
           <form onSubmit={handleLoginSubmit} className="space-y-4">
             <div>
@@ -339,13 +441,21 @@ const Login = ({ isOpen, onClose, onSuccess, onLoginSuccess }) => {
               <div className="relative">
                 <Lock className="absolute left-3 top-3 w-4 h-4 text-gray-500" />
                 <input
-                  type="password"
+                  type={showLoginPassword ? 'text' : 'password'}
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="••••••••"
-                  className="w-full pl-10 pr-4 py-2.5 bg-[#1b1f2b] border border-[#2b3246] rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                  className="w-full pl-10 pr-10 py-2.5 bg-[#1b1f2b] border border-[#2b3246] rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowLoginPassword(!showLoginPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+                  aria-label="Toggle password visibility"
+                >
+                  {showLoginPassword ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                </button>
               </div>
             </div>
 
@@ -367,7 +477,6 @@ const Login = ({ isOpen, onClose, onSuccess, onLoginSuccess }) => {
           </form>
         )}
 
-        {/* Registration Step 1: Input email to receive OTP */}
         {mode === 'register_email' && (
           <form onSubmit={handleSendRegisterOtp} className="space-y-4">
             <div>
@@ -382,17 +491,29 @@ const Login = ({ isOpen, onClose, onSuccess, onLoginSuccess }) => {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="name@example.com"
-                  className="w-full pl-10 pr-4 py-2.5 bg-[#1b1f2b] border border-[#2b3246] rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
+                  className={`w-full pl-10 pr-4 py-2.5 bg-[#1b1f2b] border rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none ${
+                    emailExists ? 'border-red-500' : 'border-[#2b3246] focus:border-blue-500'
+                  }`}
                 />
               </div>
-              <p className="text-[11px] text-gray-400 mt-1">
-                We will send a 6-digit OTP code to verify your email.
-              </p>
+              {email.trim().includes('@') ? (
+                <p className={`text-[11px] mt-1 ${emailExists ? 'text-red-400' : 'text-emerald-400'}`}>
+                  {checkingEmail
+                    ? 'Checking email availability...'
+                    : emailExists
+                    ? 'This email is already registered. Please log in.'
+                    : 'Email is available for registration.'}
+                </p>
+              ) : (
+                <p className="text-[11px] text-gray-400 mt-1">
+                  We will send a 6-digit OTP code to verify your email.
+                </p>
+              )}
             </div>
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || emailExists || checkingEmail}
               className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-semibold transition disabled:opacity-50"
             >
               {loading ? 'Sending Code...' : 'Send Verification OTP'}
@@ -408,7 +529,6 @@ const Login = ({ isOpen, onClose, onSuccess, onLoginSuccess }) => {
           </form>
         )}
 
-        {/* Registration Step 2: Verify OTP first before asking for password */}
         {mode === 'register_otp' && (
           <form onSubmit={handleVerifyRegisterOtp} className="space-y-4">
             <div>
@@ -458,7 +578,6 @@ const Login = ({ isOpen, onClose, onSuccess, onLoginSuccess }) => {
           </form>
         )}
 
-        {/* Registration Step 3: Set username and password after OTP verification */}
         {mode === 'register_password' && (
           <form onSubmit={handleCompleteRegistration} className="space-y-3.5">
             <div className="p-2.5 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-300 text-xs flex items-center gap-2">
@@ -476,9 +595,20 @@ const Login = ({ isOpen, onClose, onSuccess, onLoginSuccess }) => {
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder="Choose username"
-                  className="w-full pl-10 pr-4 py-2 bg-[#1b1f2b] border border-[#2b3246] rounded-xl text-sm text-white focus:outline-none focus:border-blue-500"
+                  className={`w-full pl-10 pr-4 py-2 bg-[#1b1f2b] border rounded-xl text-sm text-white focus:outline-none ${
+                    usernameExists ? 'border-red-500' : 'border-[#2b3246] focus:border-blue-500'
+                  }`}
                 />
               </div>
+              {username.trim().length >= 2 && (
+                <p className={`text-[11px] mt-1 ${usernameExists ? 'text-red-400' : 'text-emerald-400'}`}>
+                  {checkingUsername
+                    ? 'Checking username availability...'
+                    : usernameExists
+                    ? 'This username is already taken.'
+                    : 'Username is available.'}
+                </p>
+              )}
             </div>
 
             <div>
@@ -486,13 +616,21 @@ const Login = ({ isOpen, onClose, onSuccess, onLoginSuccess }) => {
               <div className="relative">
                 <Lock className="absolute left-3 top-3 w-4 h-4 text-gray-500" />
                 <input
-                  type="password"
+                  type={showRegisterPassword ? 'text' : 'password'}
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Min 6 characters"
-                  className="w-full pl-10 pr-4 py-2 bg-[#1b1f2b] border border-[#2b3246] rounded-xl text-sm text-white focus:outline-none focus:border-blue-500"
+                  className="w-full pl-10 pr-10 py-2 bg-[#1b1f2b] border border-[#2b3246] rounded-xl text-sm text-white focus:outline-none focus:border-blue-500"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowRegisterPassword(!showRegisterPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+                  aria-label="Toggle password visibility"
+                >
+                  {showRegisterPassword ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                </button>
               </div>
             </div>
 
@@ -501,19 +639,27 @@ const Login = ({ isOpen, onClose, onSuccess, onLoginSuccess }) => {
               <div className="relative">
                 <Lock className="absolute left-3 top-3 w-4 h-4 text-gray-500" />
                 <input
-                  type="password"
+                  type={showConfirmPassword ? 'text' : 'password'}
                   required
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   placeholder="Repeat password"
-                  className="w-full pl-10 pr-4 py-2 bg-[#1b1f2b] border border-[#2b3246] rounded-xl text-sm text-white focus:outline-none focus:border-blue-500"
+                  className="w-full pl-10 pr-10 py-2 bg-[#1b1f2b] border border-[#2b3246] rounded-xl text-sm text-white focus:outline-none focus:border-blue-500"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+                  aria-label="Toggle confirm password visibility"
+                >
+                  {showConfirmPassword ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                </button>
               </div>
             </div>
 
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || usernameExists || checkingUsername}
               className="w-full mt-2 py-3 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-semibold transition disabled:opacity-50"
             >
               {loading ? 'Creating Account...' : 'Complete Registration'}
@@ -521,7 +667,6 @@ const Login = ({ isOpen, onClose, onSuccess, onLoginSuccess }) => {
           </form>
         )}
 
-        {/* Password recovery phase 1: Email collection */}
         {mode === 'forgot_email' && (
           <form onSubmit={handleSendForgotOtp} className="space-y-4">
             <div>
@@ -559,7 +704,6 @@ const Login = ({ isOpen, onClose, onSuccess, onLoginSuccess }) => {
           </form>
         )}
 
-        {/* Password recovery phase 2: Verification and credential update */}
         {mode === 'forgot_verify' && (
           <form onSubmit={handleResetPassword} className="space-y-3.5">
             <div>
@@ -577,14 +721,25 @@ const Login = ({ isOpen, onClose, onSuccess, onLoginSuccess }) => {
 
             <div>
               <label className="block text-xs text-gray-400 mb-1">New Password</label>
-              <input
-                type="password"
-                required
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="Min 6 characters"
-                className="w-full px-4 py-2 bg-[#1b1f2b] border border-[#2b3246] rounded-xl text-sm text-white focus:outline-none focus:border-blue-500"
-              />
+              <div className="relative">
+                <Lock className="absolute left-3 top-3 w-4 h-4 text-gray-500" />
+                <input
+                  type={showResetPassword ? 'text' : 'password'}
+                  required
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Min 6 characters"
+                  className="w-full pl-10 pr-10 py-2 bg-[#1b1f2b] border border-[#2b3246] rounded-xl text-sm text-white focus:outline-none focus:border-blue-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowResetPassword(!showResetPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+                  aria-label="Toggle reset password visibility"
+                >
+                  {showResetPassword ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
 
             <button

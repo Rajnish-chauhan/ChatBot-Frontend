@@ -46,7 +46,6 @@
       flex: 1;
     }
 
-    /* Brand Header */
     .brand-header {
       display: flex;
       align-items: center;
@@ -96,7 +95,6 @@
       letter-spacing: 0.2px;
     }
 
-    /* Tab Switcher */
     .tab-nav {
       display: flex;
       gap: 8px;
@@ -141,7 +139,6 @@
       to { opacity: 1; transform: translateY(0); }
     }
 
-    /* Content Typography */
     h1 {
       font-size: 24px;
       font-weight: 800;
@@ -204,7 +201,6 @@
       margin-bottom: 14px;
     }
 
-    /* Footer */
     footer {
       text-align: center;
       margin-top: 28px;
@@ -237,13 +233,10 @@
 <body>
 
   <div class="container">
-    
-    <!-- Top Brand Header -->
     <div class="brand-header">
       <div class="brand-left">
         <div class="brand-logo">
-          <!-- Robot Icon -->
-          <svg viewBox="0 0 100 100" width="28" height="28" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <svg viewBox="0 0 100 100" width="28" height="28" fill="none" xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)">
             <path d="M42 35 L50 35 L50 42" stroke="white" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
             <rect x="34" y="42" width="32" height="25" rx="7" stroke="white" stroke-width="6"/>
             <line x1="28" y1="54.5" x2="34" y2="54.5" stroke="white" stroke-width="6" stroke-linecap="round"/>
@@ -257,16 +250,14 @@
       <div class="project-badge">Educational & Research Project</div>
     </div>
 
-    <!-- Tab Selector -->
     <div class="tab-nav">
       <button class="tab-btn active" onclick="switchTab('privacy')">1. Data Privacy</button>
       <button class="tab-btn" onclick="switchTab('policy')">2. Usage Policy & Scope</button>
     </div>
 
-    <!-- ==================== TAB 1: PRIVACY ==================== -->
     <div id="privacy-tab" class="tab-content active">
       <h1>Data Privacy</h1>
-      <div class="meta-date">Last Updated: October 2026 | Operator: Rajnish Systems (<a href="https://rajnishsystems.in" target="_blank">rajnishsystems.in</a>)</div>
+      <div class="meta-date">Last Updated: October 2026 | Operator: Rajnish Systems (<a href="[https://rajnishsystems.in](https://rajnishsystems.in)" target="_blank">rajnishsystems.in</a>)</div>
 
       <h2>1. Privacy Commitment</h2>
       <p>
@@ -277,7 +268,7 @@
       <ul>
         <li><strong>Account Identifiers:</strong> Verified email address, username, and encrypted passwords. Passwords are never saved in plaintext; they are irreversibly hashed using BCrypt.</li>
         <li><strong>OAuth2 Single Sign-On:</strong> When signing in with Google, we receive only your email and public profile ID to authenticate your session.</li>
-        <li><strong>User Conversations:</strong> Text queries, chat history, and uploaded files (PDFs, text files, and images) submitted for AI analysis.</li>
+        <li><strong>User Conversations:</strong> Text queries, chat history, and uploaded files (PDFs, PowerPoint decks, Word docs, text files, and images) submitted for AI analysis.</li>
         <li><strong>Token & Usage Metrics:</strong> Daily API interaction counts and token usage to maintain rate limits (10 calls/day for guests, 50 calls/day for registered users).</li>
       </ul>
 
@@ -294,14 +285,13 @@
 
       <h2>4. User Rights & Account Deletion</h2>
       <p>
-        You have complete control over your data. At any time, you can visit <strong>Profile & Security</strong> to update your credentials or click <strong>Delete Account</strong>. 
+        You have complete control over your data. At any time, you can visit <strong>Profile & Settings</strong> to update your credentials or click <strong>Delete Account</strong>.
       </p>
       <p>
         Deleting your account immediately and irreversibly wipes your profile, session history, and all chat records from our database.
       </p>
     </div>
 
-    <!-- ==================== TAB 2: USAGE POLICY ==================== -->
     <div id="policy-tab" class="tab-content">
       <h1>Usage Policy & Project Scope</h1>
       <div class="meta-date">Last Updated: October 2026 | Project Type: Learning & Portfolio Architecture</div>
@@ -309,7 +299,7 @@
       <div class="callout-box">
         <p><strong>Educational & Portfolio Purpose:</strong></p>
         <p style="margin-bottom: 0;">
-          <strong>ChatBot</strong> is designed, engineered, and maintained as a modern full-stack AI learning project by <strong>Rajnish Chauhan</strong> (<a href="https://rajnishsystems.in" target="_blank">Rajnish Systems</a>). It serves as a practical implementation of Spring AI, RAG (Retrieval-Augmented Generation), vector databases, and real-time streaming architectures.
+          <strong>ChatBot</strong> is designed, engineered, and maintained as a modern full-stack AI learning project by <strong>Rajnish Chauhan</strong> (<a href="[https://rajnishsystems.in](https://rajnishsystems.in)" target="_blank">Rajnish Systems</a>). It serves as a practical implementation of Spring AI, RAG (Retrieval-Augmented Generation), vector databases, and real-time streaming architectures.
         </p>
       </div>
 
@@ -318,7 +308,7 @@
       <ul>
         <li>Use the system respectfully for testing, experimentation, and research questions.</li>
         <li>Refrain from attempting prompt injections, abusive language, or automated DDoS requests against the backend APIs.</li>
-        <li>Respect system quotas: Guest accounts are capped at 10 daily queries, and registered accounts are allocated 50 daily queries (resetting intervally every 24 hours).</li>
+        <li>Respect system quotas: Guest accounts are capped at 10 daily queries, and registered accounts are allocated 50 daily queries (resetting every 24 hours).</li>
       </ul>
 
       <h2>2. AI Output & Accuracy Disclaimer</h2>
@@ -343,15 +333,13 @@
       <div class="callout-box">
         <p><strong>Developer & Entity:</strong> Rajnish Systems</p>
         <p><strong>Support Email:</strong> <a href="mailto:rajnishsystems@gmail.com">rajnishsystems@gmail.com</a></p>
-        <p style="margin-bottom: 0;"><strong>Official Website:</strong> <a href="https://rajnishsystems.in" target="_blank">https://rajnishsystems.in</a></p>
+        <p style="margin-bottom: 0;"><strong>Official Website:</strong> <a href="[https://rajnishsystems.in](https://rajnishsystems.in)" target="_blank">[https://rajnishsystems.in](https://rajnishsystems.in)</a></p>
       </div>
     </div>
-
   </div>
 
-  <!-- Application Bottom Footer -->
   <footer>
-    &copy; 2026 <a href="https://rajnishsystems.in" target="_blank">rajnishsystems.in</a>. All rights reserved.
+    &copy; 2026 <a href="[https://rajnishsystems.in](https://rajnishsystems.in)" target="_blank">rajnishsystems.in</a>. All rights reserved.
   </footer>
 
   <script>

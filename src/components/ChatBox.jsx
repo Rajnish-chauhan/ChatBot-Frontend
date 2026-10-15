@@ -5,7 +5,38 @@ import SyntaxHighlighter from "react-syntax-highlighter/dist/esm/prism";
 import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
 import Logo from "./Logo";
 
-// Syntax highlighted code snippet container
+// Normalize markdown outside code blocks to prevent nested "1. 1. 1." lists on numbered filenames and stray asterisks
+const formatCleanMarkdown = (rawText) => {
+  if (!rawText) return "";
+  const segments = rawText.split(/(```[\s\S]*?```)/g);
+  return segments
+    .map((segment) => {
+      if (segment.startsWith("```")) {
+        return segment;
+      }
+
+      let cleaned = segment
+        // Prevent bullets followed by numbers (e.g., "- 00. Topic.png" or "- 1. Item") from rendering as "• 1."
+        .replace(/^(\s*[-*•]\s+)(\d+)\.\s+/gm, "$1$2\\. ")
+        // Escape zero-padded filename prefixes at the start of lines (e.g., "00. Topic List.png", "06. Notes.pdf")
+        .replace(/^(\s*)(0\d+)\.\s+/gm, "$1$2\\. ")
+        // Tighten spaced bold markers
+        .replace(/\*\*\s+([^\n*]+?)\s+\*\*/g, "**$1**");
+
+      // Strip any trailing unmatched double asterisk during live streaming
+      const doubleAsteriskCount = (cleaned.match(/\*\*/g) || []).length;
+      if (doubleAsteriskCount % 2 !== 0) {
+        const lastIdx = cleaned.lastIndexOf("**");
+        if (lastIdx !== -1) {
+          cleaned = cleaned.slice(0, lastIdx) + cleaned.slice(lastIdx + 2);
+        }
+      }
+      return cleaned;
+    })
+    .join("");
+};
+
+// Code block container with syntax highlighting, copy button, and file download button
 const CodeBlock = ({ language, code }) => {
   const [copied, setCopied] = useState(false);
   const normalizedLanguage = language ? language.toLowerCase().trim() : "text";
@@ -17,7 +48,7 @@ const CodeBlock = ({ language, code }) => {
   };
 
   const handleDownload = () => {
-    const blob = new Blob([code], { type: "text/plain" });
+    const blob = new Blob([code], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
@@ -40,6 +71,9 @@ const CodeBlock = ({ language, code }) => {
       sql: "sql",
       sh: "sh",
       bash: "sh",
+      yaml: "yml",
+      yml: "yml",
+      xml: "xml",
     };
 
     const ext = extensionMap[normalizedLanguage] || "txt";
@@ -59,12 +93,13 @@ const CodeBlock = ({ language, code }) => {
 
         <div className="flex items-center gap-2">
           <button
+            type="button"
             onClick={handleDownload}
-            title="Download code snippet"
-            className="text-slate-400 hover:text-white transition-colors flex items-center justify-center p-1 rounded hover:bg-slate-700/40"
+            title="Download code"
+            className="text-slate-300 hover:text-white transition-colors flex items-center gap-1 text-xs py-0.5 px-2 rounded hover:bg-slate-700/50"
           >
             <svg
-              xmlns="http://www.w3.org/2000/svg"
+              xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)"
               width="13"
               height="13"
               fill="none"
@@ -76,9 +111,11 @@ const CodeBlock = ({ language, code }) => {
               <polyline points="7 10 12 15 17 10" />
               <line x1="12" y1="15" x2="12" y2="3" />
             </svg>
+            <span>Download</span>
           </button>
 
           <button
+            type="button"
             onClick={handleCopy}
             title="Copy code"
             className="text-slate-300 hover:text-white transition-colors flex items-center gap-1.5 text-xs py-0.5 px-2 rounded hover:bg-slate-700/50"
@@ -86,7 +123,7 @@ const CodeBlock = ({ language, code }) => {
             {copied ? (
               <>
                 <svg
-                  xmlns="http://www.w3.org/2000/svg"
+                  xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)"
                   width="13"
                   height="13"
                   fill="none"
@@ -102,7 +139,7 @@ const CodeBlock = ({ language, code }) => {
             ) : (
               <>
                 <svg
-                  xmlns="http://www.w3.org/2000/svg"
+                  xmlns="[http://www.w3.org/2000/svg](http://www.w3.org/2000/svg)"
                   width="13"
                   height="13"
                   fill="none"
@@ -162,7 +199,6 @@ export default function ChatBox({
 
   return (
     <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 rounded-xl bg-transparent flex flex-col max-w-4xl mx-auto w-full">
-      {/* Empty State Welcome Screen */}
       {messages.length === 0 && (
         <div className="flex-1 flex flex-col items-center justify-center pb-20 text-center max-w-lg mx-auto">
           <div className="mb-4">
@@ -172,12 +208,11 @@ export default function ChatBox({
             How can I assist you today?
           </h2>
           <p className="text-sm text-slate-500 dark:text-slate-400 leading-relaxed max-w-md">
-            Ask questions, explore ideas, analyze documents, or collaborate on code with intelligent AI assistance.
+            Ask questions, explore ideas, analyze documents (PDF, PPTX, DOCX, Images), or collaborate on code with intelligent AI assistance.
           </p>
         </div>
       )}
 
-      {/* Conversation Messages */}
       {messages.map((msg, idx) => {
         const isUser =
           msg.role === "user" ||
@@ -189,6 +224,7 @@ export default function ChatBox({
           !isUser && idx === messages.length - 1 && isStreaming;
         const isRateLimit = msg.isRateLimitError;
         const isGuestLimit = msg.isGuestError;
+        const isFileSizeError = msg.isFileSizeError;
 
         return (
           <div
@@ -206,7 +242,7 @@ export default function ChatBox({
                           className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white dark:bg-[#18181b] border border-zinc-300 dark:border-zinc-700 text-xs text-zinc-800 dark:text-zinc-200"
                         >
                           <span>📄</span>
-                          <span className="truncate max-w-[140px] font-medium">
+                          <span className="truncate max-w-[160px] font-medium">
                             {file.name}
                           </span>
                         </div>
@@ -220,8 +256,8 @@ export default function ChatBox({
                   <button
                     type="button"
                     onClick={() => copyToClipboard(msgText, msgId)}
-                    className="flex items-center gap-1 text-[11px] text-gray-400 hover:text-gray-200 px-1 py-0.5 rounded transition-colors"
-                    title="Copy user message"
+                    className="flex items-center gap-1 text-[11px] text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 px-1.5 py-0.5 rounded transition-colors"
+                    title="Copy message"
                   >
                     {copiedMsgId === msgId ? (
                       <>
@@ -239,7 +275,7 @@ export default function ChatBox({
                     ) : (
                       <>
                         <svg
-                          className="w-3.5 h-3.5 text-gray-400"
+                          className="w-3.5 h-3.5"
                           viewBox="0 0 24 24"
                           fill="none"
                           stroke="currentColor"
@@ -260,10 +296,38 @@ export default function ChatBox({
                   <Logo size={32} />
                 </div>
 
-                {isRateLimit ? (
-                  <div className="flex-1 max-w-lg rounded-2xl p-4 border border-amber-500/30 bg-amber-500/10 text-amber-200 space-y-3 shadow-lg">
+                {isFileSizeError ? (
+                  <div className="flex-1 max-w-lg rounded-2xl p-4 border border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-200 space-y-2.5 shadow-lg animate-fadeIn">
                     <div className="flex items-center gap-2.5">
-                      <div className="p-2 rounded-xl bg-amber-500/20 text-amber-400">
+                      <div className="p-2 rounded-xl bg-rose-500/20 text-rose-500 dark:text-rose-400 shrink-0">
+                        <svg
+                          className="w-5 h-5"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                      </div>
+                      <div>
+                        <h4 className="text-sm font-bold text-rose-600 dark:text-rose-300">
+                          File Size Too Long — {msg.rejectedFileName || "Limit Reached"}
+                        </h4>
+                        <span className="text-[11px] text-rose-600/80 dark:text-rose-400/80">
+                          This file was not uploaded
+                        </span>
+                      </div>
+                    </div>
+
+                    <p className="text-xs leading-relaxed">
+                      {msgText}
+                    </p>
+                  </div>
+                ) : isRateLimit ? (
+                  <div className="flex-1 max-w-lg rounded-2xl p-4 border border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-200 space-y-3 shadow-lg">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2 rounded-xl bg-amber-500/20 text-amber-500 dark:text-amber-400">
                         <svg
                           className="w-5 h-5"
                           viewBox="0 0 24 24"
@@ -277,16 +341,16 @@ export default function ChatBox({
                         </svg>
                       </div>
                       <div>
-                        <h4 className="text-sm font-bold text-amber-300">
+                        <h4 className="text-sm font-bold text-amber-600 dark:text-amber-300">
                           Limit Reached
                         </h4>
-                        <span className="text-[11px] text-amber-400/80">
+                        <span className="text-[11px] text-amber-600/80 dark:text-amber-400/80">
                           {isGuestLimit ? "Guest session notice" : "Quota resets in 24 hours"}
                         </span>
                       </div>
                     </div>
 
-                    <p className="text-xs text-amber-200/90 leading-relaxed">
+                    <p className="text-xs leading-relaxed">
                       {msgText}
                     </p>
 
@@ -316,19 +380,19 @@ export default function ChatBox({
                     <ReactMarkdown
                       remarkPlugins={[remarkGfm]}
                       components={{
-                        code({ node, inline, className, children, ...props }) {
+                        code({ node, className, children, ...props }) {
                           const match = /language-(\w+)/.exec(className || "");
-                          const codeString = String(children).replace(/\n$/, "");
+                          const rawChildren = String(children);
+                          const isBlockCode =
+                            Boolean(match) ||
+                            rawChildren.includes("\n") ||
+                            (className && className.includes("language-"));
+                          const codeString = rawChildren.replace(/\n$/, "");
 
-                          if (
-                            !inline &&
-                            (match ||
-                              codeString.includes("\n") ||
-                              (className && className.includes("language-")))
-                          ) {
+                          if (isBlockCode) {
                             return (
                               <CodeBlock
-                                language={match ? match[1] : ""}
+                                language={match ? match[1] : "code"}
                                 code={codeString}
                               />
                             );
@@ -347,22 +411,35 @@ export default function ChatBox({
                           return <div className="w-full my-1">{children}</div>;
                         },
                         p: ({ children }) => (
-                          <p className="mb-3.5 leading-relaxed last:mb-0">
+                          <p className="mb-3 leading-relaxed last:mb-0">
                             {children}
                           </p>
                         ),
+                        strong: ({ children }) => (
+                          <strong className="font-semibold text-slate-900 dark:text-white">
+                            {children}
+                          </strong>
+                        ),
                         ul: ({ children }) => (
-                          <ul className="list-disc list-outside ml-5 mb-3.5 space-y-1.5">
+                          <ul className="list-disc list-outside ml-5 mb-3.5 space-y-2">
                             {children}
                           </ul>
                         ),
-                        ol: ({ children }) => (
-                          <ol className="list-decimal list-outside ml-5 mb-3.5 space-y-1.5">
+                        ol: ({ children, start }) => (
+                          <ol
+                            start={start}
+                            className="list-decimal list-outside ml-5 mb-3.5 space-y-2"
+                          >
                             {children}
                           </ol>
                         ),
                         li: ({ children }) => (
-                          <li className="leading-relaxed">{children}</li>
+                          <li className="leading-relaxed pl-1">{children}</li>
+                        ),
+                        blockquote: ({ children }) => (
+                          <blockquote className="border-l-4 border-blue-500 pl-4 py-1 my-3 italic text-slate-600 dark:text-slate-300 bg-slate-100/50 dark:bg-slate-800/30 rounded-r-lg">
+                            {children}
+                          </blockquote>
                         ),
                         h1: ({ children }) => (
                           <h1 className="text-xl font-bold my-3 text-slate-900 dark:text-white">
@@ -379,9 +456,19 @@ export default function ChatBox({
                             {children}
                           </h3>
                         ),
+                        a: ({ href, children }) => (
+                          <a
+                            href={href}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 dark:text-blue-400 underline hover:text-blue-500"
+                          >
+                            {children}
+                          </a>
+                        ),
                       }}
                     >
-                      {msgText}
+                      {formatCleanMarkdown(msgText)}
                     </ReactMarkdown>
 
                     {!isCurrentlyStreaming && msgText.trim().length > 0 && (
@@ -389,7 +476,7 @@ export default function ChatBox({
                         <button
                           type="button"
                           onClick={() => copyToClipboard(msgText, msgId)}
-                          className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-200 px-2 py-1 rounded-md hover:bg-slate-700/20 transition-colors"
+                          className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 px-2 py-1 rounded-md hover:bg-slate-200/50 dark:hover:bg-slate-700/20 transition-colors"
                           title="Copy response"
                         >
                           {copiedMsgId === msgId ? (
@@ -410,7 +497,7 @@ export default function ChatBox({
                           ) : (
                             <>
                               <svg
-                                className="w-3.5 h-3.5 text-gray-400"
+                                className="w-3.5 h-3.5"
                                 viewBox="0 0 24 24"
                                 fill="none"
                                 stroke="currentColor"

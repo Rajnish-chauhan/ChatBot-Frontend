@@ -6,8 +6,9 @@ import {
   Settings,
   LogIn,
   PanelLeft,
-  Bot,
+  X,
 } from "lucide-react";
+import Logo from "./Logo";
 
 export default function Sidebar({
   sessions = [],
@@ -20,13 +21,14 @@ export default function Sidebar({
   onOpenProfile,
   onOpenLogin,
   isOpen = true,
+  isMobile = false,
+  onClose,
   onToggle,
 }) {
-  // Check if session belongs to a guest user
   const isGuest = Boolean(
-    !user || 
-    user.isGuest === true || 
-    user.guest === true || 
+    !user ||
+    user.isGuest === true ||
+    user.guest === true ||
     (typeof user?.username === "string" && user.username.toLowerCase().startsWith("guest_"))
   );
 
@@ -35,19 +37,17 @@ export default function Sidebar({
 
   return (
     <aside
-      className={`h-screen flex flex-col border-r transition-all duration-300 select-none ${
+      className={`h-[100dvh] flex flex-col border-r transition-all duration-300 select-none ${
         isOpen ? "w-64" : "w-0 overflow-hidden border-r-0"
       } bg-slate-50 border-slate-200 text-slate-700 dark:bg-[#0d0f12] dark:border-slate-800/80 dark:text-slate-300`}
     >
-      {/* Brand header */}
+      {/* Brand identity header with Logo and collapse button */}
       <div className="p-4 flex items-center justify-between border-b border-slate-200 dark:border-slate-800/50">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-xs">
-            <Bot size={20} />
-          </div>
+          <Logo size={32} />
           <div className="flex items-center gap-1.5">
-            <span className="font-semibold text-slate-900 dark:text-white tracking-tight text-base">
-              ChatBot
+            <span className="font-bold text-slate-900 dark:text-white tracking-tight text-base">
+              Chat<span className="text-blue-500">Bot</span>
             </span>
             <span className="px-1.5 py-0.5 text-[10px] font-bold bg-blue-500/10 text-blue-600 dark:bg-blue-500/20 dark:text-blue-400 rounded-md border border-blue-500/20 dark:border-blue-500/30">
               AI
@@ -58,16 +58,16 @@ export default function Sidebar({
         {onToggle && (
           <button
             type="button"
-            onClick={onToggle}
+            onClick={isMobile && onClose ? onClose : onToggle}
             className="p-1.5 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-white rounded-lg hover:bg-slate-200/60 dark:hover:bg-slate-800/60 transition-colors"
             title="Toggle Sidebar"
           >
-            <PanelLeft size={18} />
+            {isMobile ? <X size={18} /> : <PanelLeft size={18} />}
           </button>
         )}
       </div>
 
-      {/* New chat button */}
+      {/* New chat trigger */}
       <div className="p-3">
         <button
           type="button"
@@ -79,7 +79,7 @@ export default function Sidebar({
         </button>
       </div>
 
-      {/* Chat session list */}
+      {/* Scrollable session history list */}
       <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1 custom-scrollbar">
         <div className="px-2 py-1.5 text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
           Recent chats
@@ -129,25 +129,24 @@ export default function Sidebar({
         )}
       </div>
 
-      {/* Bottom profile / register container */}
+      {/* Bottom user profile card: clicking opens ProfileModal where avatar and password can be updated */}
       <div className="p-3 border-t border-slate-200 dark:border-slate-800/80 bg-slate-50 dark:bg-[#0d0f12]">
         {isGuest ? (
           <button
             type="button"
-            onClick={onOpenLogin}
+            onClick={() => onOpenLogin && onOpenLogin("welcome")}
             className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium text-sm transition-all duration-200 shadow-xs active:scale-[0.98]"
-            title="Register to save chat history"
+            title="Register or sign in to save chat history"
           >
             <LogIn size={16} className="shrink-0" />
-            <span>Register</span>
+            <span>Register / Log In</span>
           </button>
         ) : (
-          <div className="flex items-center justify-between p-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 dark:bg-slate-800/40 dark:border-slate-700/50 dark:hover:bg-slate-800/70 transition-colors">
-            <div 
-              className="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer" 
-              onClick={onOpenProfile}
-            >
-              {/* Profile image with fallback initial */}
+          <div
+            onClick={onOpenProfile}
+            className="flex items-center justify-between p-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 dark:bg-slate-800/40 dark:border-slate-700/50 dark:hover:bg-slate-800/70 transition-colors cursor-pointer"
+          >
+            <div className="flex items-center gap-2.5 min-w-0 flex-1">
               <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 overflow-hidden flex items-center justify-center text-white font-semibold text-xs shrink-0 shadow-xs">
                 {user?.profilePic ? (
                   <img
@@ -159,26 +158,32 @@ export default function Sidebar({
                   userInitial
                 )}
               </div>
+
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-slate-900 dark:text-slate-200 truncate">
                   {displayName}
                 </p>
-                <p className="text-[11px] text-slate-400">Settings</p>
+                <p className="text-[11px] text-slate-400">
+                  Profile & Settings
+                </p>
               </div>
             </div>
 
             <button
               type="button"
-              onClick={onOpenSettings || onOpenProfile}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (onOpenSettings) onOpenSettings();
+                else if (onOpenProfile) onOpenProfile();
+              }}
               className="p-1.5 text-slate-400 hover:text-slate-800 dark:hover:text-white rounded-lg hover:bg-slate-200/50 dark:hover:bg-slate-700/50 transition-colors shrink-0"
-              title="Settings"
+              title="Profile & Settings"
             >
-              <Settings size={18} />
+              <Settings size={17} />
             </button>
           </div>
         )}
 
-        {/* Legal links */}
         <div className="mt-3 text-center">
           <a
             href="/privacy-policy.html"

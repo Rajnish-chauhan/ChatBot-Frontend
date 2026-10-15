@@ -1,36 +1,23 @@
-/**
- * API Client & Authentication Service
- * Handles HTTP requests, Server-Sent Events (SSE) streaming,
- * OAuth2 redirects, and session state management.
- */
-
-// Determine base API URL with production-aware fallback
+// Resolve base API URL with build-time environment variable and production domain fallback
 const resolveApiBaseUrl = () => {
-  // 1. Prioritize environment variable if defined at build time
   const envUrl = import.meta.env?.VITE_API_URL;
   if (envUrl && typeof envUrl === 'string' && envUrl.trim() !== '') {
     return envUrl.trim();
   }
 
-  // 2. Runtime fallback: If running on production domain, use live API endpoint
   if (typeof window !== 'undefined' && window.location.hostname.includes('rajnishsystems.in')) {
-    return 'https://api.rajnishsystems.in/api';
+    return '[https://api.rajnishsystems.in/api](https://api.rajnishsystems.in/api)';
   }
 
-  // 3. Local development fallback
   return 'http://localhost:8080/api';
 };
 
-// Normalize base URLs and remove duplicate trailing slashes
 const rawEnvUrl = resolveApiBaseUrl().replace(/\/+$/, '');
 export const API_BASE_URL = rawEnvUrl.endsWith('/api') ? rawEnvUrl : `${rawEnvUrl}/api`;
 export const BASE_URL = API_BASE_URL.replace(/\/api\/?$/, '');
 export const OAUTH2_GOOGLE_URL = `${BASE_URL}/oauth2/authorization/google`;
 
-/**
- * Retrieve or generate a persistent unique device identifier for telemetry and rate-limiting.
- * @returns {string} The device ID
- */
+// Return a persistent browser device ID for guest rate-limiting
 export const getDeviceId = () => {
   let deviceId = localStorage.getItem('chat_device_id');
   if (!deviceId) {
@@ -40,9 +27,6 @@ export const getDeviceId = () => {
   return deviceId;
 };
 
-/**
- * Token management helpers
- */
 export const getToken = () => {
   return localStorage.getItem('token') || localStorage.getItem('auth_token') || null;
 };
@@ -58,11 +42,12 @@ export const setToken = (token) => {
   }
 };
 
-/**
- * Construct default request headers including authentication and device identification.
- * @param {boolean} isFormData - Set true if payload is FormData to omit Content-Type header
- * @returns {Record<string, string>}
- */
+export const clearGuestCache = () => {
+  localStorage.removeItem('guest_token');
+  localStorage.removeItem('guest_username');
+};
+
+// Build request headers with JWT authorization and device fingerprint
 export const getHeaders = (isFormData = false) => {
   const headers = {
     'X-Device-Id': getDeviceId(),
@@ -81,11 +66,6 @@ export const getHeaders = (isFormData = false) => {
   return headers;
 };
 
-/**
- * Handle HTTP response validation and extract JSON or plain text body.
- * @param {Response} response
- * @returns {Promise<any>}
- */
 const handleResponse = async (response) => {
   if (!response.ok) {
     let errorMessage = `HTTP error ${response.status}`;
@@ -110,10 +90,7 @@ const handleResponse = async (response) => {
   return await response.text();
 };
 
-/* ==========================================================================
-   Authentication Endpoints
-   ========================================================================== */
-
+// Authentication API methods
 export const login = async (emailOrUsername, password) => {
   const response = await fetch(`${API_BASE_URL}/auth/login`, {
     method: 'POST',
@@ -122,6 +99,7 @@ export const login = async (emailOrUsername, password) => {
   });
   const data = await handleResponse(response);
   if (data.token) {
+    clearGuestCache();
     setToken(data.token);
   }
   return data;
@@ -164,6 +142,7 @@ export const register = async (username, email, password) => {
   });
   const data = await handleResponse(response);
   if (data.token) {
+    clearGuestCache();
     setToken(data.token);
   }
   return data;
@@ -197,6 +176,7 @@ export const registerWithOtp = async (userData) => {
   });
   const data = await handleResponse(response);
   if (data.token) {
+    clearGuestCache();
     setToken(data.token);
   }
   return data;
@@ -204,6 +184,14 @@ export const registerWithOtp = async (userData) => {
 
 export const checkEmailExists = async (email) => {
   const response = await fetch(`${API_BASE_URL}/auth/check-email?email=${encodeURIComponent(email)}`, {
+    method: 'GET',
+    headers: getHeaders(),
+  });
+  return await handleResponse(response);
+};
+
+export const checkUsernameExists = async (username) => {
+  const response = await fetch(`${API_BASE_URL}/auth/check-username?username=${encodeURIComponent(username)}`, {
     method: 'GET',
     headers: getHeaders(),
   });
@@ -232,10 +220,7 @@ export const resetPasswordWithOtp = async (email, otp, newPassword) => {
 export const resetPassword = resetPasswordWithOtp;
 export const resetUserPassword = resetPasswordWithOtp;
 
-/* ==========================================================================
-   User Profile Endpoints
-   ========================================================================== */
-
+// User profile and credential management methods
 export const getUserProfile = async () => {
   const response = await fetch(`${API_BASE_URL}/users/me`, {
     method: 'GET',
@@ -265,7 +250,12 @@ export const setCredentials = async (username, password) => {
     headers: getHeaders(),
     body: JSON.stringify(payload),
   });
-  return await handleResponse(response);
+  const data = await handleResponse(response);
+  if (data.token) {
+    clearGuestCache();
+    setToken(data.token);
+  }
+  return data;
 };
 export const setUserCredentials = setCredentials;
 export const setupCredentials = setCredentials;
@@ -290,6 +280,7 @@ export const deleteAccount = async (password) => {
   });
   const result = await handleResponse(response);
   setToken(null);
+  clearGuestCache();
   return result;
 };
 export const deleteUserAccount = deleteAccount;
@@ -297,14 +288,12 @@ export const deleteUser = deleteAccount;
 
 export const logout = () => {
   setToken(null);
+  clearGuestCache();
 };
 export const logoutUser = logout;
 export const signOut = logout;
 
-/* ==========================================================================
-   Session & Chat History Endpoints
-   ========================================================================== */
-
+// Chat session management methods
 export const getChatSessions = async () => {
   const response = await fetch(`${API_BASE_URL}/chat/sessions`, {
     method: 'GET',
@@ -359,14 +348,7 @@ export const deleteSession = async (sessionId) => {
 export const deleteChatSession = deleteSession;
 export const removeSession = deleteSession;
 
-/* ==========================================================================
-   Chat Stream Processing (Server-Sent Events)
-   ========================================================================== */
-
-/**
- * Streams chat responses over SSE while maintaining formatting and markdown blocks.
- * Supports both multipart form data (with file attachments) and standard JSON.
- */
+// Stream AI responses over Server-Sent Events (SSE) with multipart file support
 export const streamMessage = async ({
   sessionId,
   message,
@@ -417,7 +399,7 @@ export const streamMessage = async ({
         errJson = await response.json();
       } catch {}
       const limitMsg = errJson?.message || 'Daily quota exceeded. Please sign in or try again after 24 hours.';
-      if (onChunk) onChunk(limitMsg);
+      if (onChunk) onChunk(limitMsg, true, errJson?.isGuest);
       if (onFinish) onFinish();
       return;
     }
@@ -437,7 +419,6 @@ export const streamMessage = async ({
 
       buffer += decoder.decode(value, { stream: true });
 
-      // SSE event frames are separated by double newlines (\n\n)
       const events = buffer.replace(/\r\n/g, '\n').split('\n\n');
       buffer = events.pop() || '';
 
@@ -449,7 +430,6 @@ export const streamMessage = async ({
         for (const line of lines) {
           if (line.startsWith('data:')) {
             const dataContent = line.slice(5);
-
             if (dataContent.trim() === '[DONE]') {
               if (onFinish) onFinish();
               return;
@@ -458,14 +438,14 @@ export const streamMessage = async ({
           }
         }
 
-        // Rejoin multiline payloads preserving whitespace and markdown linebreaks
         if (dataLines.length > 0 && onChunk) {
-          onChunk(dataLines.join('\n'));
+          // Preserve single empty SSE data frames as newline characters for multi-line code blocks
+          const chunkText = dataLines.length === 1 && dataLines[0] === '' ? '\n' : dataLines.join('\n');
+          onChunk(chunkText);
         }
       }
     }
 
-    // Flush any trailing event segment left in buffer
     if (buffer.trim()) {
       const lines = buffer.replace(/\r\n/g, '\n').split('\n');
       const dataLines = [];
@@ -478,7 +458,8 @@ export const streamMessage = async ({
         }
       }
       if (dataLines.length > 0 && onChunk) {
-        onChunk(dataLines.join('\n'));
+        const chunkText = dataLines.length === 1 && dataLines[0] === '' ? '\n' : dataLines.join('\n');
+        onChunk(chunkText);
       }
     }
 
@@ -509,6 +490,7 @@ const ChatApi = {
   getToken,
   getAuthToken,
   setToken,
+  clearGuestCache,
   getHeaders,
   login,
   loginUser,
@@ -522,6 +504,7 @@ const ChatApi = {
   verifyOtpCode,
   registerWithOtp,
   checkEmailExists,
+  checkUsernameExists,
   sendForgotPasswordOtp,
   forgotPassword,
   sendPasswordResetOtp,

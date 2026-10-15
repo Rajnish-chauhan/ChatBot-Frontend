@@ -1,5 +1,11 @@
-import React, { useState } from "react";
-import { sendOtp, verifyOtpCode, registerWithOtp, checkEmailExists } from "../api/ChatApi";
+import React, { useState, useEffect } from "react";
+import {
+  sendOtp,
+  verifyOtpCode,
+  registerWithOtp,
+  checkEmailExists,
+  checkUsernameExists,
+} from "../api/ChatApi";
 
 const EyeIcon = ({ isOpen, className = "w-4 h-4" }) =>
   isOpen ? (
@@ -25,6 +31,60 @@ const GuestUpgradeModal = ({ isOpen, onClose, onSuccess }) => {
   const [error, setError] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
 
+  // Live availability states for email and username
+  const [emailExists, setEmailExists] = useState(false);
+  const [checkingEmail, setCheckingEmail] = useState(false);
+  const [usernameExists, setUsernameExists] = useState(false);
+  const [checkingUsername, setCheckingUsername] = useState(false);
+
+  // Debounced live email existence check
+  useEffect(() => {
+    const trimmed = email.trim();
+    if (!trimmed || !trimmed.includes("@") || step !== 1) {
+      setEmailExists(false);
+      setCheckingEmail(false);
+      return;
+    }
+
+    setCheckingEmail(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await checkEmailExists(trimmed);
+        setEmailExists(Boolean(res?.exists));
+      } catch {
+        setEmailExists(false);
+      } finally {
+        setCheckingEmail(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [email, step]);
+
+  // Debounced live username existence check
+  useEffect(() => {
+    const trimmed = username.trim();
+    if (!trimmed || trimmed.length < 2 || step !== 2) {
+      setUsernameExists(false);
+      setCheckingUsername(false);
+      return;
+    }
+
+    setCheckingUsername(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await checkUsernameExists(trimmed);
+        setUsernameExists(Boolean(res?.exists));
+      } catch {
+        setUsernameExists(false);
+      } finally {
+        setCheckingUsername(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [username, step]);
+
   if (!isOpen) return null;
 
   const handleSendOtp = async (e) => {
@@ -37,10 +97,16 @@ const GuestUpgradeModal = ({ isOpen, onClose, onSuccess }) => {
       return;
     }
 
+    if (emailExists) {
+      setError("This email is already registered. Please log in instead.");
+      return;
+    }
+
     try {
       setLoading(true);
       const checkRes = await checkEmailExists(email);
       if (checkRes && checkRes.exists) {
+        setEmailExists(true);
         setError("This email is already registered. Please log in instead.");
         setLoading(false);
         return;
@@ -66,6 +132,11 @@ const GuestUpgradeModal = ({ isOpen, onClose, onSuccess }) => {
       return;
     }
 
+    if (usernameExists) {
+      setError("This username is already taken. Please choose another.");
+      return;
+    }
+
     if (password.length < 6) {
       setError("Password must be at least 6 characters long.");
       return;
@@ -79,14 +150,14 @@ const GuestUpgradeModal = ({ isOpen, onClose, onSuccess }) => {
     try {
       setLoading(true);
       await verifyOtpCode(email, otp.trim());
-      await registerWithOtp({
+      const data = await registerWithOtp({
         username: username.trim(),
         email: email.trim(),
         password,
         otp: otp.trim(),
       });
 
-      if (onSuccess) onSuccess();
+      if (onSuccess) onSuccess(data, true);
       onClose();
     } catch (err) {
       setError(err.message || "Upgrade failed. Please check the code and try again.");
@@ -136,13 +207,24 @@ const GuestUpgradeModal = ({ isOpen, onClose, onSuccess }) => {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="name@example.com"
                   required
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#121316] border border-[#2b2d35] text-sm text-white focus:outline-none focus:border-blue-500"
+                  className={`w-full px-3.5 py-2.5 rounded-xl bg-[#121316] border text-sm text-white focus:outline-none ${
+                    emailExists ? "border-red-500" : "border-[#2b2d35] focus:border-blue-500"
+                  }`}
                 />
+                {email.includes("@") && (
+                  <p className={`text-[11px] ${emailExists ? "text-red-400" : "text-emerald-400"}`}>
+                    {checkingEmail
+                      ? "Checking email..."
+                      : emailExists
+                      ? "This email is already registered."
+                      : "Email is available."}
+                  </p>
+                )}
               </div>
 
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || emailExists || checkingEmail}
                 className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-semibold transition-colors disabled:opacity-50"
               >
                 {loading ? "Sending Code..." : "Continue"}
@@ -180,8 +262,19 @@ const GuestUpgradeModal = ({ isOpen, onClose, onSuccess }) => {
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder="rajnish_01"
                   required
-                  className="w-full px-3.5 py-2 rounded-lg bg-[#121316] border border-[#2b2d35] text-sm text-white focus:outline-none focus:border-blue-500"
+                  className={`w-full px-3.5 py-2 rounded-lg bg-[#121316] border text-sm text-white focus:outline-none ${
+                    usernameExists ? "border-red-500" : "border-[#2b2d35] focus:border-blue-500"
+                  }`}
                 />
+                {username.trim().length >= 2 && (
+                  <p className={`text-[11px] ${usernameExists ? "text-red-400" : "text-emerald-400"}`}>
+                    {checkingUsername
+                      ? "Checking username..."
+                      : usernameExists
+                      ? "Username is already taken."
+                      : "Username is available."}
+                  </p>
+                )}
               </div>
 
               <div className="space-y-1">
@@ -207,7 +300,7 @@ const GuestUpgradeModal = ({ isOpen, onClose, onSuccess }) => {
 
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || usernameExists || checkingUsername}
                 className="w-full mt-2 py-2.5 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-semibold transition-colors disabled:opacity-50"
               >
                 {loading ? "Creating Account..." : "Complete Upgrade"}

@@ -20,10 +20,9 @@ import {
   getUserProfile,
   getToken,
   setToken,
+  clearGuestCache,
   logout,
 } from './api/ChatApi';
-
-const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024; // 20 MB limit
 
 const App = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -46,7 +45,6 @@ const App = () => {
   const isStreamingRef = useRef(false);
   const newCreatedSessionIdRef = useRef(null);
 
-  // Smooth streaming buffer refs for ChatGPT/Claude-like progressive text reveal
   const streamQueueRef = useRef('');
   const displayedContentRef = useRef('');
   const streamTimerRef = useRef(null);
@@ -64,7 +62,6 @@ const App = () => {
     };
   }, []);
 
-  // Adapt sidebar visibility across desktop and mobile viewports
   useEffect(() => {
     const handleResize = () => {
       const mobile = window.innerWidth < 768;
@@ -77,15 +74,29 @@ const App = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Require explicit authentication choice (Guest, Login, Google, or Register) before entering
+  // Authenticate user from OAuth2 redirect parameters or existing token
   useEffect(() => {
     const initAuth = async () => {
       const urlParams = new URLSearchParams(window.location.search);
       const urlToken = urlParams.get('token');
+      const urlUsername = urlParams.get('username');
+      const isNewOAuth = urlParams.get('new_oauth') === 'true';
 
       if (urlToken) {
+        clearGuestCache();
         setToken(urlToken);
         window.history.replaceState({}, document.title, window.location.pathname);
+
+        if (urlUsername) {
+          setUser({
+            username: urlUsername,
+            isGuest: false,
+            isPasswordSet: !isNewOAuth,
+          });
+        }
+        if (isNewOAuth) {
+          setIsOAuthPasswordOpen(true);
+        }
       }
 
       const token = getToken();
@@ -100,6 +111,7 @@ const App = () => {
       try {
         const profile = await getUserProfile();
         setUser(profile);
+        setIsLoginOpen(false);
 
         const isGuestUser = profile?.isGuest ?? profile?.guest ?? false;
         const hasPassword = profile?.isPasswordSet ?? profile?.passwordSet ?? false;
@@ -108,11 +120,13 @@ const App = () => {
           setIsOAuthPasswordOpen(true);
         }
       } catch (err) {
-        console.warn('Stored token is invalid or expired:', err);
-        logout();
-        setUser(null);
-        setLoginInitialMode('welcome');
-        setIsLoginOpen(true);
+        console.warn('Profile validation warning:', err);
+        if (!urlToken) {
+          logout();
+          setUser(null);
+          setLoginInitialMode('welcome');
+          setIsLoginOpen(true);
+        }
       }
     };
 
@@ -248,29 +262,6 @@ const App = () => {
     }
   };
 
-  // Append a styled File Size Too Large warning card directly into the ChatBox
-  const handleFileTooLarge = (fileName, warningMessage) => {
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: 'u_oversize_' + Date.now(),
-        sender: 'user',
-        role: 'user',
-        text: `Attempted to attach: ${fileName}`,
-        content: `Attempted to attach: ${fileName}`,
-        attachments: [{ name: fileName }],
-      },
-      {
-        id: 'ai_oversize_' + (Date.now() + 1),
-        sender: 'assistant',
-        role: 'assistant',
-        text: warningMessage,
-        content: warningMessage,
-        isFileSizeError: true,
-      },
-    ]);
-  };
-
   const handleStopGeneration = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -362,30 +353,6 @@ const App = () => {
       setLoginInitialMode('welcome');
       setIsLoginOpen(true);
       return;
-    }
-
-    // Verify no single file or total attachment payload exceeds 20 MB
-    if (files && files.length > 0) {
-      let totalSize = 0;
-      for (const file of files) {
-        totalSize += file.size || 0;
-        if (file.size > MAX_FILE_SIZE_BYTES) {
-          const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
-          handleFileTooLarge(
-            file.name,
-            `The file "${file.name}" (${sizeMb} MB) exceeds the 20 MB maximum limit. Please compress the file or upload a document smaller than 20 MB.`
-          );
-          return;
-        }
-      }
-      if (totalSize > MAX_FILE_SIZE_BYTES) {
-        const totalMb = (totalSize / (1024 * 1024)).toFixed(1);
-        handleFileTooLarge(
-          files.map((f) => f.name).join(', '),
-          `Total attachment size (${totalMb} MB) exceeds the 20 MB maximum limit. Please upload files totaling under 20 MB.`
-        );
-        return;
-      }
     }
 
     let currentSessionId = activeSessionId;
@@ -497,25 +464,15 @@ const App = () => {
         setIsStreaming(false);
         isStreamingRef.current = false;
 
-        const isOversizeErr =
-          err?.message?.includes('20 MB') ||
-          err?.message?.includes('FILE_TOO_LARGE') ||
-          err?.message?.includes('413');
-
         setMessages((prev) => {
           const updated = [...prev];
           const lastIdx = updated.length - 1;
           if (lastIdx >= 0 && updated[lastIdx].role === 'assistant') {
             updated[lastIdx] = {
               ...updated[lastIdx],
-              text: isOversizeErr
-                ? 'The uploaded file exceeds the maximum allowed size of 20 MB. Please compress the file or upload a smaller document.'
-                : displayedContentRef.current || 'An error occurred while generating the response. Please check server logs.',
-              content: isOversizeErr
-                ? 'The uploaded file exceeds the maximum allowed size of 20 MB. Please compress the file or upload a smaller document.'
-                : displayedContentRef.current || 'An error occurred while generating the response. Please check server logs.',
-              isFileSizeError: isOversizeErr,
-              isError: !isOversizeErr,
+              text: displayedContentRef.current || 'An error occurred while generating the response. Please check server logs.',
+              content: displayedContentRef.current || 'An error occurred while generating the response. Please check server logs.',
+              isError: true,
             };
           }
           return updated;
@@ -627,7 +584,6 @@ const App = () => {
         />
       )}
 
-      {/* Left sidebar drawer on both mobile and desktop */}
       <div
         className={`${
           isMobile
@@ -659,7 +615,6 @@ const App = () => {
 
       <div className="flex-1 flex flex-col h-full min-w-0 relative">
         <header className="h-14 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between px-4 z-10 bg-white/80 dark:bg-[#121212]/80 backdrop-blur-sm shrink-0">
-          {/* Left-aligned hamburger / sidebar button and brand logo */}
           <div className="flex items-center gap-2.5">
             {(!isSidebarOpen || isMobile) && (
               <button
@@ -739,7 +694,6 @@ const App = () => {
         <footer className="shrink-0 p-4 max-w-4xl w-full mx-auto">
           <MessageInput
             onSendMessage={handleSendMessage}
-            onFileTooLarge={handleFileTooLarge}
             isStreaming={isStreaming}
             onStopStreaming={handleStopGeneration}
             onStopGeneration={handleStopGeneration}

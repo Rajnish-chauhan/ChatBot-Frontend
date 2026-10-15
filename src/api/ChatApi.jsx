@@ -1,15 +1,29 @@
-// Resolve base API URL with build-time environment variable and production domain fallback
+// Resolve backend API base URL dynamically for both Localhost and Live (Vercel / Production)
 const resolveApiBaseUrl = () => {
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname;
+    // Use local Spring Boot backend when running on local machine
+    if (host === 'localhost' || host === '127.0.0.1') {
+      return 'http://localhost:8080/api';
+    }
+  }
+
+  // Use VITE_API_URL only if it points to a valid external backend (never the frontend host itself)
   const envUrl = import.meta.env?.VITE_API_URL;
-  if (envUrl && typeof envUrl === 'string' && envUrl.trim() !== '') {
+  if (
+    envUrl &&
+    typeof envUrl === 'string' &&
+    envUrl.trim() !== '' &&
+    !envUrl.includes('localhost') &&
+    !envUrl.includes('127.0.0.1') &&
+    !envUrl.includes('chatbot.rajnishsystems.in') &&
+    !envUrl.includes('.vercel.app')
+  ) {
     return envUrl.trim();
   }
 
-  if (typeof window !== 'undefined' && window.location.hostname.includes('rajnishsystems.in')) {
-    return '[https://api.rajnishsystems.in/api](https://api.rajnishsystems.in/api)';
-  }
-
-  return 'http://localhost:8080/api';
+  // Default production backend URL for Vercel and rajnishsystems.in
+  return 'https://api.rajnishsystems.in/api';
 };
 
 const rawEnvUrl = resolveApiBaseUrl().replace(/\/+$/, '');
@@ -17,7 +31,6 @@ export const API_BASE_URL = rawEnvUrl.endsWith('/api') ? rawEnvUrl : `${rawEnvUr
 export const BASE_URL = API_BASE_URL.replace(/\/api\/?$/, '');
 export const OAUTH2_GOOGLE_URL = `${BASE_URL}/oauth2/authorization/google`;
 
-// Return a persistent browser device ID for guest rate-limiting
 export const getDeviceId = () => {
   let deviceId = localStorage.getItem('chat_device_id');
   if (!deviceId) {
@@ -47,7 +60,6 @@ export const clearGuestCache = () => {
   localStorage.removeItem('guest_username');
 };
 
-// Build request headers with JWT authorization and device fingerprint
 export const getHeaders = (isFormData = false) => {
   const headers = {
     'X-Device-Id': getDeviceId(),
@@ -66,31 +78,38 @@ export const getHeaders = (isFormData = false) => {
   return headers;
 };
 
+// Read response body stream once and parse JSON safely to avoid "body stream already read" errors
 const handleResponse = async (response) => {
+  const rawText = await response.text();
+
   if (!response.ok) {
-    let errorMessage = `HTTP error ${response.status}`;
-    try {
-      const errorData = await response.json();
-      errorMessage = errorData.message || errorData.error || JSON.stringify(errorData);
-    } catch {
-      const text = await response.text();
-      if (text) errorMessage = text;
+    let errorMessage = `Request failed (${response.status})`;
+    if (rawText) {
+      try {
+        const errorData = JSON.parse(rawText);
+        errorMessage = errorData.message || errorData.error || errorMessage;
+      } catch {
+        if (rawText.trim().startsWith('<')) {
+          errorMessage = `Backend service unavailable (${response.status}). Please verify the server is running.`;
+        } else {
+          errorMessage = rawText;
+        }
+      }
     }
     throw new Error(errorMessage);
   }
 
-  if (response.status === 204) {
+  if (response.status === 204 || !rawText) {
     return {};
   }
 
-  const contentType = response.headers.get('content-type');
-  if (contentType && contentType.includes('application/json')) {
-    return await response.json();
+  try {
+    return JSON.parse(rawText);
+  } catch {
+    return rawText;
   }
-  return await response.text();
 };
 
-// Authentication API methods
 export const login = async (emailOrUsername, password) => {
   const response = await fetch(`${API_BASE_URL}/auth/login`, {
     method: 'POST',
@@ -187,7 +206,8 @@ export const checkEmailExists = async (email) => {
     method: 'GET',
     headers: getHeaders(),
   });
-  return await handleResponse(response);
+  const data = await handleResponse(response);
+  return typeof data === 'object' && data !== null ? data : { exists: false };
 };
 
 export const checkUsernameExists = async (username) => {
@@ -195,7 +215,8 @@ export const checkUsernameExists = async (username) => {
     method: 'GET',
     headers: getHeaders(),
   });
-  return await handleResponse(response);
+  const data = await handleResponse(response);
+  return typeof data === 'object' && data !== null ? data : { exists: false };
 };
 
 export const sendForgotPasswordOtp = async (email) => {
@@ -220,13 +241,16 @@ export const resetPasswordWithOtp = async (email, otp, newPassword) => {
 export const resetPassword = resetPasswordWithOtp;
 export const resetUserPassword = resetPasswordWithOtp;
 
-// User profile and credential management methods
 export const getUserProfile = async () => {
   const response = await fetch(`${API_BASE_URL}/users/me`, {
     method: 'GET',
     headers: getHeaders(),
   });
-  return await handleResponse(response);
+  const data = await handleResponse(response);
+  if (typeof data !== 'object' || data === null) {
+    throw new Error('Invalid profile response from server');
+  }
+  return data;
 };
 export const getCurrentUser = getUserProfile;
 export const getProfile = getUserProfile;
@@ -293,7 +317,6 @@ export const logout = () => {
 export const logoutUser = logout;
 export const signOut = logout;
 
-// Chat session management methods
 export const getChatSessions = async () => {
   const response = await fetch(`${API_BASE_URL}/chat/sessions`, {
     method: 'GET',
@@ -348,7 +371,6 @@ export const deleteSession = async (sessionId) => {
 export const deleteChatSession = deleteSession;
 export const removeSession = deleteSession;
 
-// Stream AI responses over Server-Sent Events (SSE) with multipart file support
 export const streamMessage = async ({
   sessionId,
   message,
@@ -394,9 +416,10 @@ export const streamMessage = async ({
     const response = await fetch(`${API_BASE_URL}/chat/${sessionId}/stream`, fetchOptions);
 
     if (response.status === 429) {
+      const rawLimitText = await response.text();
       let errJson = null;
       try {
-        errJson = await response.json();
+        errJson = JSON.parse(rawLimitText);
       } catch {}
       const limitMsg = errJson?.message || 'Daily quota exceeded. Please sign in or try again after 24 hours.';
       if (onChunk) onChunk(limitMsg, true, errJson?.isGuest);
@@ -439,7 +462,6 @@ export const streamMessage = async ({
         }
 
         if (dataLines.length > 0 && onChunk) {
-          // Preserve single empty SSE data frames as newline characters for multi-line code blocks
           const chunkText = dataLines.length === 1 && dataLines[0] === '' ? '\n' : dataLines.join('\n');
           onChunk(chunkText);
         }

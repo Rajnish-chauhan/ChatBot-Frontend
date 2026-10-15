@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { PanelLeft, User, LogIn, Menu } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import ChatBox from './components/ChatBox';
@@ -23,6 +23,42 @@ import {
   clearGuestCache,
   logout,
 } from './api/ChatApi';
+
+// Local cache helpers so switching between sessions feels instant while syncing with PostgreSQL
+const getCachedMessages = (sessionId) => {
+  if (!sessionId) return null;
+  try {
+    const raw = localStorage.getItem(`chat_history_session_${sessionId}`);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+};
+
+const setCachedMessages = (sessionId, msgs) => {
+  if (!sessionId || !Array.isArray(msgs)) return;
+  try {
+    localStorage.setItem(`chat_history_session_${sessionId}`, JSON.stringify(msgs));
+  } catch {}
+};
+
+const removeCachedMessages = (sessionId) => {
+  if (!sessionId) return;
+  try {
+    localStorage.removeItem(`chat_history_session_${sessionId}`);
+  } catch {}
+};
+
+const normalizeServerMessages = (history) => {
+  if (!Array.isArray(history)) return [];
+  return history.map((m, idx) => ({
+    id: m.id || `msg_${idx}`,
+    role: m.sender?.toLowerCase() === 'user' ? 'user' : 'assistant',
+    sender: m.sender,
+    text: m.text || m.content || '',
+    content: m.text || m.content || '',
+  }));
+};
 
 const App = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -74,7 +110,39 @@ const App = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Authenticate user from OAuth2 redirect parameters or existing token
+  // Load all sessions for the authenticated user and select the most recent session
+  const fetchAndHydrateSessions = useCallback(async (selectLatest = true) => {
+    try {
+      const data = await getChatSessions();
+      const list = Array.isArray(data) ? data : [];
+      setSessions(list);
+
+      if (list.length > 0 && selectLatest) {
+        const targetId = list[0].id;
+        setActiveSessionId(targetId);
+
+        // Pre-populate from embedded messages or fetch from server
+        if (Array.isArray(list[0].messages) && list[0].messages.length > 0) {
+          const normalized = normalizeServerMessages(list[0].messages);
+          setMessages(normalized);
+          setCachedMessages(targetId, normalized);
+        } else {
+          const remoteHistory = await getSessionMessages(targetId);
+          const normalized = normalizeServerMessages(remoteHistory);
+          setMessages(normalized);
+          setCachedMessages(targetId, normalized);
+        }
+      } else if (list.length === 0) {
+        setActiveSessionId(null);
+        setMessages([]);
+      }
+    } catch (err) {
+      console.warn('Could not load sessions:', err);
+      setSessions([]);
+    }
+  }, []);
+
+  // Initialize authentication and load user's saved sessions on page load
   useEffect(() => {
     const initAuth = async () => {
       const urlParams = new URLSearchParams(window.location.search);
@@ -119,6 +187,8 @@ const App = () => {
         if (!isGuestUser && !hasPassword) {
           setIsOAuthPasswordOpen(true);
         }
+
+        await fetchAndHydrateSessions(true);
       } catch (err) {
         console.warn('Profile validation warning:', err);
         if (!urlToken) {
@@ -126,35 +196,14 @@ const App = () => {
           setUser(null);
           setLoginInitialMode('welcome');
           setIsLoginOpen(true);
+        } else {
+          await fetchAndHydrateSessions(true);
         }
       }
     };
 
     initAuth();
-  }, []);
-
-  const loadSessions = async () => {
-    try {
-      const data = await getChatSessions();
-      const list = Array.isArray(data) ? data : [];
-      setSessions(list);
-      if (list.length > 0 && !activeSessionId) {
-        setActiveSessionId(list[0].id);
-      }
-    } catch {
-      setSessions([]);
-    }
-  };
-
-  useEffect(() => {
-    if (user) {
-      loadSessions();
-    } else {
-      setSessions([]);
-      setActiveSessionId(null);
-      setMessages([]);
-    }
-  }, [user]);
+  }, [fetchAndHydrateSessions]);
 
   const handleProfileUpdated = async () => {
     try {
@@ -165,8 +214,9 @@ const App = () => {
     }
   };
 
+  // Load messages whenever user switches activeSessionId in the sidebar
   useEffect(() => {
-    const loadMessages = async () => {
+    const loadMessagesForActiveSession = async () => {
       if (!activeSessionId) {
         setMessages([]);
         return;
@@ -177,24 +227,26 @@ const App = () => {
         return;
       }
 
+      // Show cached messages immediately for zero-latency switching
+      const cached = getCachedMessages(activeSessionId);
+      if (cached && cached.length > 0) {
+        setMessages(cached);
+      }
+
       try {
         const history = await getSessionMessages(activeSessionId);
         if (Array.isArray(history)) {
-          const normalized = history.map((m) => ({
-            id: m.id,
-            role: m.sender?.toLowerCase() === 'user' ? 'user' : 'assistant',
-            sender: m.sender,
-            text: m.text,
-            content: m.text,
-          }));
+          const normalized = normalizeServerMessages(history);
           setMessages(normalized);
+          setCachedMessages(activeSessionId, normalized);
         }
-      } catch {
-        setMessages([]);
+      } catch (err) {
+        console.warn('Failed to load session messages:', err);
+        if (!cached) setMessages([]);
       }
     };
 
-    loadMessages();
+    loadMessagesForActiveSession();
   }, [activeSessionId]);
 
   const handleNewChat = async () => {
@@ -211,9 +263,9 @@ const App = () => {
     }
 
     try {
-      const newSession = await createSession('New chat');
+      const newSession = await createSession('New Chat');
       newCreatedSessionIdRef.current = newSession.id;
-      setSessions((prev) => [newSession, ...prev]);
+      setSessions((prev) => [newSession, ...prev.filter((s) => s.id !== newSession.id)]);
       setActiveSessionId(newSession.id);
       setMessages([]);
     } catch (err) {
@@ -228,6 +280,10 @@ const App = () => {
   };
 
   const handleSelectSession = (sessionId) => {
+    if (sessionId === activeSessionId) {
+      if (isMobile) setIsSidebarOpen(false);
+      return;
+    }
     if (isStreaming) {
       handleStopGeneration();
     }
@@ -241,10 +297,18 @@ const App = () => {
   const handleDeleteSession = async (sessionId) => {
     try {
       await deleteSession(sessionId);
-      setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+      removeCachedMessages(sessionId);
+
+      const remaining = sessions.filter((s) => s.id !== sessionId);
+      setSessions(remaining);
+
       if (activeSessionId === sessionId) {
-        setActiveSessionId(null);
-        setMessages([]);
+        if (remaining.length > 0) {
+          setActiveSessionId(remaining[0].id);
+        } else {
+          setActiveSessionId(null);
+          setMessages([]);
+        }
       }
     } catch (err) {
       console.error('Failed to delete chat session:', err);
@@ -301,6 +365,9 @@ const App = () => {
               content: snapshot,
             };
           }
+          if (sessionIdForSync) {
+            setCachedMessages(sessionIdForSync, updated);
+          }
           return updated;
         });
       } else if (networkDoneRef.current) {
@@ -310,36 +377,33 @@ const App = () => {
         isStreamingRef.current = false;
         abortControllerRef.current = null;
 
+        // Sync persisted messages and updated session title from PostgreSQL after stream finishes
         if (sessionIdForSync) {
-          getSessionMessages(sessionIdForSync)
-            .then((history) => {
-              if (Array.isArray(history) && history.length > 0) {
-                const lastMsg = history[history.length - 1];
-                if (lastMsg && lastMsg.sender?.toLowerCase() !== 'user') {
-                  const finalFormattedText = lastMsg.text || lastMsg.content || '';
-                  if (finalFormattedText) {
-                    setMessages((prev) => {
-                      const updated = [...prev];
-                      const lastIdx = updated.length - 1;
-                      if (
-                        lastIdx >= 0 &&
-                        updated[lastIdx].role === 'assistant' &&
-                        !updated[lastIdx].isRateLimitError &&
-                        !updated[lastIdx].isFileSizeError
-                      ) {
-                        updated[lastIdx] = {
-                          ...updated[lastIdx],
-                          text: finalFormattedText,
-                          content: finalFormattedText,
-                        };
-                      }
-                      return updated;
-                    });
-                  }
+          setTimeout(() => {
+            getSessionMessages(sessionIdForSync)
+              .then((history) => {
+                if (Array.isArray(history) && history.length > 0) {
+                  const normalized = normalizeServerMessages(history);
+                  setMessages((prev) => {
+                    const lastPrev = prev[prev.length - 1];
+                    if (lastPrev?.isRateLimitError || lastPrev?.isFileSizeError) {
+                      return prev;
+                    }
+                    setCachedMessages(sessionIdForSync, normalized);
+                    return normalized;
+                  });
                 }
-              }
-            })
-            .catch(() => {});
+              })
+              .catch(() => {});
+
+            getChatSessions()
+              .then((updatedSessions) => {
+                if (Array.isArray(updatedSessions)) {
+                  setSessions(updatedSessions);
+                }
+              })
+              .catch(() => {});
+          }, 350);
         }
       }
     }, 18);
@@ -356,15 +420,19 @@ const App = () => {
     }
 
     let currentSessionId = activeSessionId;
+    const cleanPrompt = text.trim();
+    const generatedTitle =
+      cleanPrompt.length > 32
+        ? cleanPrompt.slice(0, 32) + '...'
+        : cleanPrompt || (files[0] ? files[0].name : 'New Chat');
 
     if (!currentSessionId) {
       try {
-        const sessionTitle = text.trim().slice(0, 25) || (files[0] ? files[0].name : 'New chat');
-        const newSession = await createSession(sessionTitle);
+        const newSession = await createSession(generatedTitle);
         currentSessionId = newSession.id;
         newCreatedSessionIdRef.current = currentSessionId;
         setActiveSessionId(currentSessionId);
-        setSessions((prev) => [newSession, ...prev]);
+        setSessions((prev) => [newSession, ...prev.filter((s) => s.id !== currentSessionId)]);
       } catch (err) {
         console.error('Failed to create new session:', err);
         setMessages((prev) => [
@@ -382,10 +450,9 @@ const App = () => {
       }
     } else {
       const currentSession = sessions.find((s) => s.id === currentSessionId);
-      if (currentSession && (currentSession.title === 'New chat' || currentSession.title === 'New Chat')) {
-        const newTitle = text.trim().slice(0, 25) || (files[0] ? files[0].name : 'New chat');
+      if (currentSession && (!currentSession.title || currentSession.title.toLowerCase() === 'new chat')) {
         setSessions((prev) =>
-          prev.map((s) => (s.id === currentSessionId ? { ...s, title: newTitle } : s))
+          prev.map((s) => (s.id === currentSessionId ? { ...s, title: generatedTitle } : s))
         );
       }
     }
@@ -394,13 +461,13 @@ const App = () => {
       id: 'msg_' + Date.now(),
       sender: 'user',
       role: 'user',
-      text: text.trim(),
-      content: text.trim(),
+      text: cleanPrompt,
+      content: cleanPrompt,
       attachments: files.map((f) => ({ name: f.name })),
     };
 
     const assistantPlaceholder = {
-      id: 'msg_ai_' + Date.now(),
+      id: 'msg_ai_' + (Date.now() + 1),
       sender: 'assistant',
       role: 'assistant',
       text: '',
@@ -411,7 +478,12 @@ const App = () => {
     displayedContentRef.current = '';
     networkDoneRef.current = false;
 
-    setMessages((prev) => [...prev, userMessage, assistantPlaceholder]);
+    setMessages((prev) => {
+      const next = [...prev, userMessage, assistantPlaceholder];
+      if (currentSessionId) setCachedMessages(currentSessionId, next);
+      return next;
+    });
+
     setIsStreaming(true);
     isStreamingRef.current = true;
 
@@ -420,7 +492,7 @@ const App = () => {
 
     await streamMessage({
       sessionId: currentSessionId,
-      message: text.trim(),
+      message: cleanPrompt,
       files,
       signal: abortControllerRef.current.signal,
       onChunk: (chunk, isRateLimit = false, isGuestLimit = false) => {
@@ -484,6 +556,7 @@ const App = () => {
     });
   };
 
+  // Handle login/registration completion: load saved sessions for returning users or open a fresh chat for new accounts
   const handleLoginSuccess = async (userData, isNewRegistration = false) => {
     setActiveSessionId(null);
     setMessages([]);
@@ -512,35 +585,7 @@ const App = () => {
       return;
     }
 
-    try {
-      const userSessions = await getChatSessions();
-      const sessionList = Array.isArray(userSessions) ? userSessions : [];
-      setSessions(sessionList);
-
-      if (sessionList.length > 0) {
-        const firstSessionId = sessionList[0].id;
-        setActiveSessionId(firstSessionId);
-        const history = await getSessionMessages(firstSessionId);
-        if (Array.isArray(history)) {
-          setMessages(
-            history.map((m) => ({
-              id: m.id,
-              role: m.sender?.toLowerCase() === 'user' ? 'user' : 'assistant',
-              sender: m.sender,
-              text: m.text,
-              content: m.text,
-            }))
-          );
-        }
-      } else {
-        setActiveSessionId(null);
-        setMessages([]);
-      }
-    } catch {
-      setSessions([]);
-      setActiveSessionId(null);
-      setMessages([]);
-    }
+    await fetchAndHydrateSessions(true);
   };
 
   const handleLogout = () => {
@@ -748,7 +793,10 @@ const App = () => {
           initialUsername={user?.username}
           onSuccess={() => {
             setIsOAuthPasswordOpen(false);
-            getUserProfile().then((data) => setUser(data));
+            getUserProfile().then((data) => {
+              setUser(data);
+              fetchAndHydrateSessions(true);
+            });
           }}
         />
       )}

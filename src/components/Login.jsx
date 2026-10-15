@@ -50,12 +50,14 @@ const Login = ({
   const [confirmPassword, setConfirmPassword] = useState('');
   const [otp, setOtp] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
 
   // Password visibility toggle states
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [showRegisterPassword, setShowRegisterPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [showResetPassword, setShowResetPassword] = useState(false);
+  const [showConfirmResetPassword, setShowConfirmResetPassword] = useState(false);
 
   // Live availability states for email and username
   const [emailExists, setEmailExists] = useState(false);
@@ -71,7 +73,6 @@ const Login = ({
     }
   }, [isOpen, initialMode]);
 
-  // Real-time email availability check while typing in registration view
   useEffect(() => {
     const trimmed = email.trim();
     if (mode !== 'register_email' || !trimmed || !trimmed.includes('@')) {
@@ -95,7 +96,6 @@ const Login = ({
     return () => clearTimeout(timer);
   }, [email, mode]);
 
-  // Real-time username availability check while typing in registration credential step
   useEffect(() => {
     const trimmed = username.trim();
     if (mode !== 'register_password' || !trimmed || trimmed.length < 2) {
@@ -261,8 +261,9 @@ const Login = ({
     }
   };
 
+  // Forgot Password Step 1: Send 6-digit reset OTP to registered email
   const handleSendForgotOtp = async (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
     if (!email.trim()) {
       setError('Please enter your registered email address.');
       return;
@@ -271,35 +272,49 @@ const Login = ({
     try {
       setLoading(true);
       setError('');
-      await sendForgotPasswordOtp(email.trim());
-      setSuccessMsg('A password reset code has been sent to your email.');
+      const res = await sendForgotPasswordOtp(email.trim());
+      if (res?.email) {
+        setEmail(res.email);
+      }
+      setOtp('');
+      setNewPassword('');
+      setConfirmNewPassword('');
+      setSuccessMsg(`A 6-digit password reset code has been sent to ${res?.email || email.trim()}.`);
       setMode('forgot_verify');
     } catch (err) {
-      setError(err.message || 'Failed to send reset code.');
+      setError(err.message || 'No registered account found or failed to send reset code.');
     } finally {
       setLoading(false);
     }
   };
 
+  // Forgot Password Step 2: Verify OTP and save new password
   const handleResetPassword = async (e) => {
     e.preventDefault();
-    if (!otp.trim() || !newPassword) {
-      setError('Please enter the OTP and your new password.');
+    setError('');
+
+    if (!otp.trim() || otp.trim().length !== 6) {
+      setError('Please enter the valid 6-digit OTP code sent to your email.');
       return;
     }
-    if (newPassword.length < 6) {
-      setError('New password must be at least 6 characters.');
+    if (!newPassword || newPassword.length < 6) {
+      setError('New password must be at least 6 characters long.');
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      setError('New passwords do not match.');
       return;
     }
 
     try {
       setLoading(true);
-      setError('');
       await resetPasswordWithOtp(email.trim(), otp.trim(), newPassword);
-      setSuccessMsg('Password successfully updated. Please log in.');
-      setTimeout(() => switchMode('login'), 1500);
+      setEmailOrUsername(email.trim());
+      setPassword('');
+      setSuccessMsg('Password updated successfully! Please sign in with your new password.');
+      setMode('login');
     } catch (err) {
-      setError(err.message || 'Failed to reset password.');
+      setError(err.message || 'Invalid OTP or failed to reset password.');
     } finally {
       setLoading(false);
     }
@@ -432,7 +447,12 @@ const Login = ({
                 </label>
                 <button
                   type="button"
-                  onClick={() => switchMode('forgot_email')}
+                  onClick={() => {
+                    if (emailOrUsername.includes('@')) {
+                      setEmail(emailOrUsername.trim());
+                    }
+                    switchMode('forgot_email');
+                  }}
                   className="text-xs text-blue-400 hover:underline"
                 >
                   Forgot password?
@@ -667,23 +687,27 @@ const Login = ({
           </form>
         )}
 
+        {/* Forgot Password Step 1: Request OTP */}
         {mode === 'forgot_email' && (
           <form onSubmit={handleSendForgotOtp} className="space-y-4">
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">
-                Registered Email Address
+                Registered Email or Username
               </label>
               <div className="relative">
                 <Mail className="absolute left-3 top-3 w-4 h-4 text-gray-500" />
                 <input
-                  type="email"
+                  type="text"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="name@example.com"
+                  placeholder="Enter your registered email or username"
                   className="w-full pl-10 pr-4 py-2.5 bg-[#1b1f2b] border border-[#2b3246] rounded-xl text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
                 />
               </div>
+              <p className="text-[11px] text-gray-400 mt-1">
+                We will send a 6-digit OTP code to your registered email address to reset your password.
+              </p>
             </div>
 
             <button
@@ -691,7 +715,7 @@ const Login = ({
               disabled={loading}
               className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-semibold transition disabled:opacity-50"
             >
-              {loading ? 'Sending Code...' : 'Send Reset Code'}
+              {loading ? 'Sending Reset Code...' : 'Send Reset OTP'}
             </button>
 
             <button
@@ -704,19 +728,25 @@ const Login = ({
           </form>
         )}
 
+        {/* Forgot Password Step 2: Verify OTP and set new password */}
         {mode === 'forgot_verify' && (
           <form onSubmit={handleResetPassword} className="space-y-3.5">
             <div>
-              <label className="block text-xs text-gray-400 mb-1">6-Digit Code</label>
-              <input
-                type="text"
-                required
-                maxLength={6}
-                value={otp}
-                onChange={(e) => setOtp(e.target.value)}
-                placeholder="123456"
-                className="w-full px-4 py-2 bg-[#1b1f2b] border border-[#2b3246] rounded-xl text-sm text-white text-center tracking-widest focus:outline-none focus:border-blue-500 font-mono"
-              />
+              <label className="block text-xs text-gray-400 mb-1">
+                6-Digit OTP Code sent to <span className="text-white font-medium">{email}</span>
+              </label>
+              <div className="relative">
+                <KeyRound className="absolute left-3 top-3 w-4 h-4 text-gray-500" />
+                <input
+                  type="text"
+                  required
+                  maxLength={6}
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value)}
+                  placeholder="Enter 6-digit OTP"
+                  className="w-full pl-10 pr-4 py-2 bg-[#1b1f2b] border border-[#2b3246] rounded-xl text-sm text-white text-center tracking-widest focus:outline-none focus:border-blue-500 font-mono"
+                />
+              </div>
             </div>
 
             <div>
@@ -735,9 +765,32 @@ const Login = ({
                   type="button"
                   onClick={() => setShowResetPassword(!showResetPassword)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
-                  aria-label="Toggle reset password visibility"
+                  aria-label="Toggle new password visibility"
                 >
                   {showResetPassword ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Confirm New Password</label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-3 w-4 h-4 text-gray-500" />
+                <input
+                  type={showConfirmResetPassword ? 'text' : 'password'}
+                  required
+                  value={confirmNewPassword}
+                  onChange={(e) => setConfirmNewPassword(e.target.value)}
+                  placeholder="Repeat new password"
+                  className="w-full pl-10 pr-10 py-2 bg-[#1b1f2b] border border-[#2b3246] rounded-xl text-sm text-white focus:outline-none focus:border-blue-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmResetPassword(!showConfirmResetPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors"
+                  aria-label="Toggle confirm new password visibility"
+                >
+                  {showConfirmResetPassword ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
                 </button>
               </div>
             </div>
@@ -747,16 +800,26 @@ const Login = ({
               disabled={loading}
               className="w-full py-3 px-4 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm font-semibold transition disabled:opacity-50"
             >
-              {loading ? 'Resetting...' : 'Set New Password'}
+              {loading ? 'Updating Password...' : 'Reset Password'}
             </button>
 
-            <button
-              type="button"
-              onClick={() => switchMode('login')}
-              className="w-full text-xs text-gray-400 hover:text-gray-200 text-center pt-1"
-            >
-              ← Back to Sign In
-            </button>
+            <div className="flex items-center justify-between text-xs text-gray-400 pt-1">
+              <button
+                type="button"
+                onClick={handleSendForgotOtp}
+                disabled={loading}
+                className="hover:text-blue-400 underline"
+              >
+                Resend OTP
+              </button>
+              <button
+                type="button"
+                onClick={() => switchMode('login')}
+                className="hover:text-white"
+              >
+                ← Back to Sign In
+              </button>
+            </div>
           </form>
         )}
       </div>

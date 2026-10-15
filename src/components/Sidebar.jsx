@@ -1,8 +1,10 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   MessageSquare,
   SquarePen,
   Trash2,
+  Pencil,
+  Check,
   Settings,
   LogIn,
   PanelLeft,
@@ -16,6 +18,7 @@ export default function Sidebar({
   onSelectSession,
   onNewChat,
   onDeleteSession,
+  onRenameSession,
   user,
   onOpenSettings,
   onOpenProfile,
@@ -25,6 +28,9 @@ export default function Sidebar({
   onClose,
   onToggle,
 }) {
+  const [editingSessionId, setEditingSessionId] = useState(null);
+  const [editingTitle, setEditingTitle] = useState("");
+
   const isGuest = Boolean(
     !user ||
     user.isGuest === true ||
@@ -35,13 +41,28 @@ export default function Sidebar({
   const displayName = user?.username || "User";
   const userInitial = displayName.charAt(0).toUpperCase();
 
+  const startEditing = (e, session) => {
+    e.stopPropagation();
+    setEditingSessionId(session.id);
+    setEditingTitle(session.title || "New Chat");
+  };
+
+  const submitRename = (e, sessionId) => {
+    e.stopPropagation();
+    if (editingTitle.trim() && onRenameSession) {
+      onRenameSession(sessionId, editingTitle.trim());
+    }
+    setEditingSessionId(null);
+    setEditingTitle("");
+  };
+
   return (
     <aside
       className={`h-[100dvh] flex flex-col border-r transition-all duration-300 select-none ${
         isOpen ? "w-64" : "w-0 overflow-hidden border-r-0"
       } bg-slate-50 border-slate-200 text-slate-700 dark:bg-[#0d0f12] dark:border-slate-800/80 dark:text-slate-300`}
     >
-      {/* Brand identity header with Logo and collapse button */}
+      {/* Brand header */}
       <div className="p-4 flex items-center justify-between border-b border-slate-200 dark:border-slate-800/50">
         <div className="flex items-center gap-2.5">
           <Logo size={32} />
@@ -67,7 +88,7 @@ export default function Sidebar({
         )}
       </div>
 
-      {/* New chat trigger */}
+      {/* New chat button */}
       <div className="p-3">
         <button
           type="button"
@@ -79,7 +100,7 @@ export default function Sidebar({
         </button>
       </div>
 
-      {/* Scrollable session history list */}
+      {/* ChatGPT / Claude style session list */}
       <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1 custom-scrollbar">
         <div className="px-2 py-1.5 text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
           Recent chats
@@ -88,37 +109,77 @@ export default function Sidebar({
         {sessions && sessions.length > 0 ? (
           sessions.map((s) => {
             const isActive = s.id === activeSessionId;
+            const isEditing = editingSessionId === s.id;
+
             return (
               <div
                 key={s.id}
-                onClick={() => onSelectSession(s.id)}
+                onClick={() => !isEditing && onSelectSession(s.id)}
                 className={`group flex items-center justify-between px-3 py-2 rounded-xl text-sm cursor-pointer transition-all ${
                   isActive
                     ? "bg-slate-200 text-slate-900 font-medium dark:bg-slate-800 dark:text-white shadow-xs"
                     : "text-slate-600 hover:bg-slate-200/60 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800/50 dark:hover:text-slate-200"
                 }`}
               >
-                <div className="flex items-center gap-2.5 min-w-0 flex-1 mr-2">
+                <div className="flex items-center gap-2.5 min-w-0 flex-1 mr-1">
                   <MessageSquare
                     size={16}
                     className={`shrink-0 ${
                       isActive ? "text-blue-500 dark:text-blue-400" : "text-slate-400 dark:text-slate-500"
                     }`}
                   />
-                  <span className="truncate">{s.title || "New Chat"}</span>
+                  {isEditing ? (
+                    <input
+                      type="text"
+                      value={editingTitle}
+                      autoFocus
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => setEditingTitle(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") submitRename(e, s.id);
+                        if (e.key === "Escape") setEditingSessionId(null);
+                      }}
+                      onBlur={(e) => submitRename(e, s.id)}
+                      className="w-full bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs px-2 py-1 rounded border border-blue-500 focus:outline-none"
+                    />
+                  ) : (
+                    <span className="truncate">{s.title || "New Chat"}</span>
+                  )}
                 </div>
 
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDeleteSession(s.id);
-                  }}
-                  className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-500 rounded-md hover:bg-slate-300/50 dark:hover:bg-slate-700/50 transition-all shrink-0"
-                  title="Delete chat"
-                >
-                  <Trash2 size={14} />
-                </button>
+                <div className="flex items-center gap-0.5 shrink-0">
+                  {isEditing ? (
+                    <button
+                      type="button"
+                      onClick={(e) => submitRename(e, s.id)}
+                      className="p-1 text-emerald-500 hover:text-emerald-400 rounded-md"
+                      title="Save title"
+                    >
+                      <Check size={14} />
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={(e) => startEditing(e, s)}
+                      className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-blue-500 rounded-md hover:bg-slate-300/50 dark:hover:bg-slate-700/50 transition-all"
+                      title="Rename chat"
+                    >
+                      <Pencil size={13} />
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDeleteSession(s.id);
+                    }}
+                    className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-500 rounded-md hover:bg-slate-300/50 dark:hover:bg-slate-700/50 transition-all"
+                    title="Delete chat"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               </div>
             );
           })
@@ -129,7 +190,7 @@ export default function Sidebar({
         )}
       </div>
 
-      {/* Bottom user profile card: clicking opens ProfileModal where avatar and password can be updated */}
+      {/* Bottom user profile card */}
       <div className="p-3 border-t border-slate-200 dark:border-slate-800/80 bg-slate-50 dark:bg-[#0d0f12]">
         {isGuest ? (
           <button
